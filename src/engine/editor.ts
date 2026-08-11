@@ -9,6 +9,7 @@ import { GLStrokeRenderer } from './gl/strokeRenderer'
 import { DEFAULT_BRUSH, type BrushSettings } from './brush/settings'
 import type { BlendMode, CursorStyle, Pt, Rect, StrokePoint, ToolId } from './types'
 import { clamp } from './types'
+import { MipPyramid } from './mipmap'
 
 class Emitter {
   private listeners = new Set<() => void>()
@@ -115,6 +116,15 @@ export class Editor {
    * just does it. Its canvas holds the already-resolved stroke, so committing is
    * still a single drawImage into the layer.
    */
+  /** Shared by the zoomed-out viewport and, later, the navigator thumbnail. */
+  private mips = new MipPyramid()
+
+  /** Layer pixels changed: the composite and its mip pyramid are both stale. */
+  private contentChanged(): void {
+    this.compositor.invalidate()
+    this.mips.invalidate()
+  }
+
   private glStroke: GLStrokeRenderer
   /** Pre-stroke copy of the active layer, so undo can read back just the rect
    *  the stroke actually touched without a CPU snapshot up front. */
@@ -158,7 +168,7 @@ export class Editor {
     this.checker = makeChecker()
 
     this.history.onChange = () => {
-      this.compositor.invalidate()
+      this.contentChanged()
       this.invalidate()
       this.ui.emit()
     }
@@ -410,7 +420,7 @@ export class Editor {
 
   selectLayer(index: number): void {
     this.doc.activeIndex = clamp(index, 0, this.doc.layers.length - 1)
-    this.compositor.invalidate()
+    this.contentChanged()
     this.invalidate()
     this.ui.emit()
   }
@@ -422,7 +432,7 @@ export class Editor {
     if (!l) return
     Object.assign(l, patch)
     this.doc.touch()
-    this.compositor.invalidate()
+    this.contentChanged()
     this.invalidate()
     this.ui.emit()
   }
@@ -539,8 +549,16 @@ export class Editor {
       g.fillRect(0, 0, doc.width, doc.height)
     }
 
-    g.imageSmoothingEnabled = camera.scale < 2.5
-    g.drawImage(composed.canvas, 0, 0)
+    // Zoomed out, draw from a mip level instead of the full-resolution canvas:
+    // one bilinear tap cannot represent a 4x shrink, and the result is the
+    // "viewport looks noisy" complaint. See engine/mipmap.ts.
+    g.imageSmoothingEnabled = camera.scale < 4
+    g.imageSmoothingQuality = 'high'
+    // Mid-stroke the composite changes every frame, so last frame's levels are
+    // stale. Only pays the rebuild when actually zoomed out.
+    if (active && camera.scale < 0.5) this.mips.invalidate()
+    const lvl = this.mips.levelFor(composed.canvas, camera.scale)
+    g.drawImage(lvl.canvas, 0, 0, lvl.width, lvl.height, 0, 0, doc.width, doc.height)
 
     g.lineWidth = 1 / camera.scale
     g.strokeStyle = 'rgba(255,255,255,.14)'
