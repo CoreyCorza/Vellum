@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Wintab bench</title>
+<style>
+  :root { --fg:#d7dade; --dim:#8b9299; --wt:#6ee7a8; --pe:#ff8fa3; }
+  * { box-sizing: border-box; }
+  html, body { height:100%; margin:0; }
+  body {
+    background:#141517; color:var(--fg); overflow:hidden;
+    font:12px/1.5 'Segoe UI', system-ui, sans-serif; user-select:none;
+    display:grid; grid-template-columns:1fr 330px;
+  }
+  #stage { position:relative; background:#0e0f10; }
+  canvas { position:absolute; inset:0; width:100%; height:100%; touch-action:none; cursor:none; }
+  #side { border-left:1px solid #2e3237; padding:12px; overflow-y:auto; background:#1c1e21; }
+  h2 { font-size:10px; letter-spacing:.09em; text-transform:uppercase; color:#5d646b;
+       margin:14px 0 6px; }
+  h2:first-child { margin-top:0; }
+  table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+  td { padding:2px 0; }
+  td:last-child { text-align:right; color:var(--fg); }
+  td:first-child { color:var(--dim); }
+  .wt { color:var(--wt); } .pe { color:var(--pe); }
+  .key { display:flex; gap:14px; margin-bottom:8px; }
+  .key span::before { content:'●'; margin-right:5px; }
+  button { width:100%; background:#232629; color:var(--fg); border:1px solid #3a4046;
+           border-radius:6px; padding:6px; font:inherit; cursor:pointer; margin-top:10px; }
+  button:hover { background:#282c30; }
+  .err { color:#ff8fa3; white-space:pre-wrap; }
+  .hint { color:#5d646b; margin-top:10px; line-height:1.5; }
+  pre { background:#141517; border:1px solid #2e3237; border-radius:6px; padding:8px;
+        font-size:10px; overflow-x:auto; color:var(--dim); }
+</style>
+</head>
+<body>
+<div id="stage"><canvas id="c"></canvas></div>
+<div id="side">
+  <div class="key">
+    <span class="wt">Wintab</span><span class="pe">Pointer Events</span>
+  </div>
+  <div id="err" class="err"></div>
+
+  <h2>Device</h2>
+  <table id="dev"></table>
+
+  <h2>Wintab (polled in main)</h2>
+  <table id="twt"></table>
+
+  <h2>Pointer Events (Chromium)</h2>
+  <table id="tpe"></table>
+
+  <button id="reset">Clear traces &amp; stats</button>
+  <button id="copy">Copy report</button>
+  <div class="hint">
+    Draw a few strokes, fast and slow. The leading dot is the lower-latency path.
+    Then hit <b>Copy report</b>.
+  </div>
+  <pre id="report"></pre>
+</div>
+
+<script>
+const cv = document.getElementById('c')
+const ctx = cv.getContext('2d')
+let W = 0, H = 0, DPR = 1
+
+function resize() {
+  const r = cv.getBoundingClientRect()
+  W = r.width; H = r.height; DPR = Math.min(window.devicePixelRatio || 1, 2)
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR)
+}
+new ResizeObserver(resize).observe(document.getElementById('stage'))
+
+// ---------------------------------------------------------------- statistics
+function makeStats() {
+  return { n: 0, gaps: [], last: null, lastAt: 0, batches: [], pressures: new Set() }
+}
+let wtStats = makeStats(), peStats = makeStats()
+let wtTrace = [], peTrace = []
+let wtHead = null, peHead = null
+let info = null
+
+const pct = (arr, p) => {
+  if (!arr.length) return 0
+  const s = [...arr].sort((a, b) => a - b)
+  return s[Math.min(s.length - 1, Math.floor(s.length * p))]
+}
+const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : 0)
+
+function record(stats, at) {
+  stats.n++
+  if (stats.lastAt) stats.gaps.push(at - stats.lastAt)
+  stats.lastAt = at
+  if (stats.gaps.length > 4000) stats.gaps.shift()
+}
+
+// ------------------------------------------------------------ pointer events
+const stage = document.getElementById('stage')
+
+// Both pointerrawupdate and pointermove carry the SAME coalesced payload. The
+// first bench run listened to both and double-counted every sample, which is
+// why Pointer Events appeared to run at 320 Hz on a 200 Hz digitiser. Mirror
+// the real app: prefer rawupdate, fall back to pointermove only if it stops.
+let lastRawUpdate = -Infinity
+function onPointer(e, raw) {
+  const now = performance.now()
+  if (raw) lastRawUpdate = now
+  else if (now - lastRawUpdate < 150) return
+
+  const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : []
+  const list = evs.length ? evs : [e]
+  for (const s of list) {
+    record(peStats, now)
+    peStats.pressures.add(Math.round(s.pressure * 100000))
+    peTrace.push({ x: s.clientX, y: s.clientY, p: s.pressure, down: s.buttons !== 0 })
+  }
+  peHead = { x: e.clientX, y: e.clientY }
+  if (peTrace.length > 6000) peTrace.splice(0, peTrace.length - 6000)
+}
+stage.addEventListener('pointerrawupdate', (e) => onPointer(e, true))
+stage.addEventListener('pointermove', (e) => onPointer(e, false))
+stage.addEventListener('contextmenu', (e) => e.preventDefault())
+
+// -------------------------------------------------------------------- wintab
+window.bench.onPackets(({ packets, recvAt, batch, pollGap }) => {
+  wtStats.batches.push(batch)
+  if (wtStats.batches.length > 2000) wtStats.batches.shift()
+  wtStats.polls = (wtStats.polls || [])
+  wtStats.polls.push(pollGap)
+  if (wtStats.polls.length > 2000) wtStats.polls.shift()
+
+  for (const p of packets) {
+    record(wtStats, recvAt)
+    wtStats.pressures.add(p.pressure)
+    // packet timestamp -> js arrival, minus the run's minimum = added delay
+    const delta = recvAt - p.t
+    wtStats.minDelta = wtStats.minDelta === undefined ? delta : Math.min(wtStats.minDelta, delta)
+    wtStats.deltas = wtStats.deltas || []
+    wtStats.deltas.push(delta)
+    if (wtStats.deltas.length > 4000) wtStats.deltas.shift()
+    wtTrace.push({ x: p.x, y: p.y, p: p.pressure, down: (p.buttons & 1) !== 0, alt: p.altitude })
+  }
+  const last = packets[packets.length - 1]
+  wtHead = { x: last.x, y: last.y }
+  if (wtTrace.length > 6000) wtTrace.splice(0, wtTrace.length - 6000)
+})
+
+// -------------------------------------------------------------------- render
+function drawTrace(pts, color, maxP) {
+  ctx.strokeStyle = color
+  ctx.lineWidth = 1.25
+  ctx.beginPath()
+  let started = false
+  for (const q of pts) {
+    if (!q.down) { started = false; continue }
+    if (!started) { ctx.moveTo(q.x, q.y); started = true } else ctx.lineTo(q.x, q.y)
+  }
+  ctx.stroke()
+  // pressure ribbon
+  ctx.fillStyle = color + '44'
+  for (const q of pts) {
+    if (!q.down) continue
+    const r = 1 + (q.p / maxP) * 16
+    ctx.beginPath(); ctx.arc(q.x, q.y, r, 0, 6.2832); ctx.fill()
+  }
+}
+
+function frame() {
+  requestAnimationFrame(frame)
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0)
+  ctx.clearRect(0, 0, W, H)
+  ctx.fillStyle = '#0e0f10'
+  ctx.fillRect(0, 0, W, H)
+
+  const maxWt = info?.caps?.pressure?.max || 16383
+  drawTrace(peTrace, '#ff8fa3', 1)
+  drawTrace(wtTrace, '#6ee7a8', maxWt)
+
+  const dot = (h, color) => {
+    if (!h) return
+    ctx.beginPath(); ctx.arc(h.x, h.y, 7, 0, 6.2832)
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.stroke()
+  }
+  dot(peHead, '#ff8fa3')
+  dot(wtHead, '#6ee7a8')
+
+  if (wtHead && peHead) {
+    ctx.strokeStyle = '#ffffff33'; ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(peHead.x, peHead.y); ctx.lineTo(wtHead.x, wtHead.y); ctx.stroke()
+  }
+  updateTables()
+}
+
+function row(t, k, v, cls) {
+  const tr = document.createElement('tr')
+  tr.innerHTML = `<td>${k}</td><td class="${cls || ''}">${v}</td>`
+  t.append(tr)
+}
+
+let lastTableUpdate = 0
+function updateTables() {
+  const now = performance.now()
+  if (now - lastTableUpdate < 250) return
+  lastTableUpdate = now
+
+  const dev = document.getElementById('dev'); dev.innerHTML = ''
+  if (info?.caps) {
+    row(dev, 'device', info.caps.device)
+    row(dev, 'wintab levels', info.caps.pressureLevels, 'wt')
+    row(dev, 'twist max', info.caps.twistMax)
+    row(dev, 'poll interval', info.pollMs + ' ms (requested)')
+    row(dev, '1ms timers', info.highResTimers ? 'on' : 'FAILED', info.highResTimers ? 'wt' : 'pe')
+    row(dev, 'scale factor', info.scaleFactor)
+  }
+
+  const a = document.getElementById('twt'); a.innerHTML = ''
+  const rateW = wtStats.gaps.length ? 1000 / mean(wtStats.gaps) : 0
+  row(a, 'samples', wtStats.n, 'wt')
+  row(a, 'rate', rateW.toFixed(0) + ' Hz', 'wt')
+  row(a, 'gap p50 / p95', `${pct(wtStats.gaps, .5).toFixed(1)} / ${pct(wtStats.gaps, .95).toFixed(1)} ms`)
+  row(a, 'packets per poll', mean(wtStats.batches || []).toFixed(2))
+  row(a, 'poll gap p50 / p95',
+      `${pct(wtStats.polls || [], .5).toFixed(2)} / ${pct(wtStats.polls || [], .95).toFixed(2)} ms`)
+  if (wtStats.deltas?.length) {
+    const base = wtStats.minDelta
+    const rel = wtStats.deltas.map((d) => d - base)
+    row(a, 'added delay p50', pct(rel, .5).toFixed(1) + ' ms')
+    row(a, 'added delay p95', pct(rel, .95).toFixed(1) + ' ms')
+  }
+  row(a, 'distinct pressures', wtStats.pressures.size, 'wt')
+
+  const b = document.getElementById('tpe'); b.innerHTML = ''
+  const rateP = peStats.gaps.length ? 1000 / mean(peStats.gaps) : 0
+  row(b, 'samples', peStats.n, 'pe')
+  row(b, 'rate', rateP.toFixed(0) + ' Hz', 'pe')
+  row(b, 'gap p50 / p95', `${pct(peStats.gaps, .5).toFixed(1)} / ${pct(peStats.gaps, .95).toFixed(1)} ms`)
+  row(b, 'distinct pressures', peStats.pressures.size, 'pe')
+}
+
+function report() {
+  const rel = (wtStats.deltas || []).map((d) => d - wtStats.minDelta)
+  return JSON.stringify({
+    device: info?.caps,
+    pollMs: info?.pollMs,
+    highResTimers: info?.highResTimers,
+    wintab: {
+      samples: wtStats.n,
+      rateHz: +(wtStats.gaps.length ? 1000 / mean(wtStats.gaps) : 0).toFixed(1),
+      gapP50: +pct(wtStats.gaps, .5).toFixed(2),
+      gapP95: +pct(wtStats.gaps, .95).toFixed(2),
+      packetsPerPoll: +mean(wtStats.batches || []).toFixed(2),
+      pollGapP95: +pct(wtStats.polls || [], .95).toFixed(2),
+      addedDelayP50: +pct(rel, .5).toFixed(2),
+      addedDelayP95: +pct(rel, .95).toFixed(2),
+      distinctPressures: wtStats.pressures.size
+    },
+    pointerEvents: {
+      samples: peStats.n,
+      rateHz: +(peStats.gaps.length ? 1000 / mean(peStats.gaps) : 0).toFixed(1),
+      gapP50: +pct(peStats.gaps, .5).toFixed(2),
+      gapP95: +pct(peStats.gaps, .95).toFixed(2),
+      distinctPressures: peStats.pressures.size
+    },
+    error: info?.error ?? null
+  }, null, 2)
+}
+
+document.getElementById('reset').onclick = () => {
+  wtStats = makeStats(); peStats = makeStats()
+  wtTrace = []; peTrace = []
+  document.getElementById('report').textContent = ''
+}
+document.getElementById('copy').onclick = async () => {
+  const text = report()
+  document.getElementById('report').textContent = text
+  try { await navigator.clipboard.writeText(text) } catch {}
+}
+
+window.bench.info().then((i) => {
+  info = i
+  if (i.error) document.getElementById('err').textContent = 'Wintab error: ' + i.error
+  resize()
+  requestAnimationFrame(frame)
+})
+</script>
+</body>
+</html>

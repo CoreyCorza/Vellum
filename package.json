@@ -1,0 +1,44 @@
+{
+  "name": "inkwell",
+  "version": "0.1.0",
+  "description": "A drawing and painting application",
+  "main": "./out/main/index.js",
+  "author": "CRZ",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "dev:web": "vite --config vite.web.config.ts",
+    "build": "npm run typecheck && electron-vite build",
+    "typecheck": "tsc --noEmit",
+    "start": "electron-vite preview",
+    "smoke": "electron scripts/smoke-main.cjs",
+    "verify": "electron scripts/verify-main.cjs",
+    "gestures": "electron scripts/verify-gestures.cjs",
+    "penprop": "electron scripts/verify-pen-prop.cjs",
+    "wintab": "electron scripts/verify-wintab-input.cjs",
+    "stabiliser": "electron scripts/measure-stabiliser.cjs",
+    "curves": "electron scripts/verify-curves.cjs",
+    "flowopacity": "electron scripts/verify-flow-opacity.cjs",
+    "bench:wintab": "electron scripts/wintab-bench/main.cjs",
+    "dist": "npm run build && electron-builder --win --dir",
+    "dist:installer": "npm run build && electron-builder --win"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.10",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "electron": "^33.0.0",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.0"
+  },
+  "dependencies": {
+    "koffi": "^3.1.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  }
+}

@@ -1,0 +1,21 @@
+appId: dev.crz.inkwell
+productName: Inkwell
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+  # koffi is a native module and must stay unbundled — it is loaded at runtime
+  # by src/main/penFeedback.ts to suppress Windows Ink's OS-drawn pen rings.
+  - node_modules/koffi/**/*
+asarUnpack:
+  - node_modules/koffi/**/*
+win:
+  target:
+    - nsis
+  artifactName: ${productName}-${version}-setup.${ext}
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
