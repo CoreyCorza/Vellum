@@ -19,6 +19,14 @@ function catmullRom(a: number, b: number, c: number, d: number, t: number): numb
 }
 
 /**
+ * Smallest radius a dab is actually rasterised at, in document pixels.
+ *
+ * Anything smaller fades instead of shrinking — see `subPixelFade`. Half a
+ * pixel, so a size-1 brush at full pressure sits exactly on the floor.
+ */
+const MIN_DAB_RADIUS = 0.5
+
+/**
  * Turns a trickle of input samples into evenly-deposited dabs.
  *
  * Three things happen in here, in order:
@@ -388,7 +396,8 @@ export class StrokeEngine {
     }
   }
 
-  private radiusFor(pressure: number, tilt: number): number {
+  /** The radius the settings ask for, before the sub-pixel floor. */
+  private wantedRadius(pressure: number, tilt: number): number {
     const s = this.settings()
     let f = 1
     if (s.pressureToSize) {
@@ -396,7 +405,33 @@ export class StrokeEngine {
     }
     if (s.tiltToSize) f *= lerp(1, 0.45, clamp(tilt, 0, 1))
     if (s.speedToSize) f *= clamp(1 - this.speed * 0.0022, 0.35, 1)
-    return Math.max(0.35, s.size * 0.5 * f)
+    return Math.max(0, s.size * 0.5 * f)
+  }
+
+  private radiusFor(pressure: number, tilt: number): number {
+    return Math.max(MIN_DAB_RADIUS, this.wantedRadius(pressure, tilt))
+  }
+
+  /**
+   * Alpha compensation for a dab whose radius hit the floor.
+   *
+   * A dab thinner than a pixel cannot get thinner — there is no geometry left
+   * to remove. Clamping the radius and stopping there is why a light touch drew
+   * a solid one-pixel line and pressure felt dead at small sizes. So the
+   * footprint holds at the floor and alpha takes the difference instead, scaled
+   * by AREA, which deposits roughly the ink the smaller dab would have. A light
+   * touch comes out as a faint hairline, and faint is what the eye reads as
+   * thinner.
+   *
+   * This is the thing `minSize` was really working around: without it you had
+   * to hold the brush off the floor to keep the taper, which is a workaround
+   * for the engine rather than a style choice.
+   */
+  private subPixelFade(pressure: number, tilt: number): number {
+    const wanted = this.wantedRadius(pressure, tilt)
+    if (wanted >= MIN_DAB_RADIUS) return 1
+    const ratio = wanted / MIN_DAB_RADIUS
+    return ratio * ratio
   }
 
   /**
@@ -454,7 +489,7 @@ export class StrokeEngine {
     // because the blend is conditional on it — see gl/strokeRenderer.ts. The
     // eraser stamps identically; whether the result is added or subtracted is
     // decided once, at commit, by the composite op.
-    target.stampDab(x, y, r, a, this.capFor(pressure), s.hardness)
+    target.stampDab(x, y, r, a * this.subPixelFade(pressure, tilt), this.capFor(pressure), s.hardness)
 
     this.bounds.add(x, y, r + 1)
   }

@@ -43,8 +43,11 @@ const SCRIPT = `(() => {
     minSize: 0, stabilise: 0, stabiliseSpeedAdapt: 0, pathSmoothness: 1,
     symmetry: 'none', color: '#111111'
   })
-  const stroke = (pts) => {
-    const mk = (p, i) => ({ x: p[0], y: p[1], pressure: 1, tilt: 0, twist: 0, t: i * 16 })
+  const stroke = (pts, press) => {
+    const mk = (p, i) => ({
+      x: p[0], y: p[1], tilt: 0, twist: 0, t: i * 16,
+      pressure: press ? press(i / (pts.length - 1)) : 1
+    })
     ed.beginStroke(mk(pts[0], 0), false)
     for (let i = 1; i < pts.length; i++) ed.extendStroke(mk(pts[i], i))
     ed.endStroke()
@@ -70,7 +73,27 @@ const SCRIPT = `(() => {
   diag(620, 3)
   diag(820, 6)
 
-  // 3. a cursive 'eeee' at low flow — a chain of acute self-crossings. This is
+  // 3. pressure tapers at small sizes. A dab thinner than a pixel cannot get
+  // thinner, so below the floor it has to fade instead — otherwise every one of
+  // these draws a uniform solid line and pressure looks broken.
+  const taper = (y, size) => {
+    ed.setBrush({
+      size: size, hardness: 1, spacing: 0.05, opacity: 1, flow: 1,
+      pressureToSize: true, pressureToOpacity: false, pressureToFlow: false,
+      sizeCurve: lin, opacityCurve: lin, flowCurve: lin,
+      minSize: 0, stabilise: 0, stabiliseSpeedAdapt: 0, pathSmoothness: 1,
+      symmetry: 'none', color: '#111111'
+    })
+    const pts = []
+    for (let i = 0; i <= 200; i++) pts.push([1460 + i * 2.3, y])
+    stroke(pts, (t) => 0.02 + t * 0.98)
+  }
+  taper(200, 1)
+  taper(250, 2)
+  taper(310, 4)
+  taper(390, 12)
+
+  // 4. a cursive 'eeee' at low flow — a chain of acute self-crossings. This is
   // the case that exposed the compositor being wrong: overlaps must not bloom
   // into dark knots or grow a hard edge where the soft rims cross.
   brush(70, 0)
@@ -82,7 +105,39 @@ const SCRIPT = `(() => {
   }
   stroke(loop)
 
-  return { doc: [ed.doc.width, ed.doc.height] }
+  // Ink along the size-1 taper, to confirm pressure actually moves it. The layer
+  // is opaque white, so this reads LUMINANCE -- 255 is bare paper, 0 is full
+  // black. Alpha would be 255 everywhere and say nothing.
+  const lum = (x, y) => ed.doc.active.surface.ctx.getImageData(x, y, 1, 1).data[0]
+  const taperInk = [0.05, 0.3, 0.6, 0.95].map((t) => {
+    const x = Math.round(1460 + t * 200 * 2.3)
+    let darkest = 255
+    for (let y = 197; y <= 203; y++) darkest = Math.min(darkest, lum(x, y))
+    return { pressure: +(0.02 + t * 0.98).toFixed(2), darkest }
+  })
+
+  return { doc: [ed.doc.width, ed.doc.height], taperInk }
+})()`
+
+/** The viewport, zoomed out. This is a different question from the sheet above:
+ *  not "is the dab right" but "does drawing the document smaller than 1:1 keep
+ *  the image, or just sample it". */
+const ZOOM = (scale) => `(() => {
+  const ed = window.editor
+  ed.camera.scale = ${scale}
+  ed.camera.cx = ed.doc.width / 2
+  ed.camera.cy = ed.doc.height / 2
+  ed.camera.rotation = 0
+  ed.invalidate()
+  return true
+})()`
+
+const GRAB_VIEW = `(() => {
+  const v = document.getElementById('view')
+  const c = document.createElement('canvas')
+  c.width = v.width; c.height = v.height
+  c.getContext('2d').drawImage(v, 0, 0)
+  return c.toDataURL('image/png')
 })()`
 
 const GRAB = `(() => {
@@ -100,10 +155,13 @@ const GRAB = `(() => {
   g.drawImage(s.canvas, 210, 158, 100, 28, 0, 1130, 600, 168)
   g.drawImage(s.canvas, 228, 700, 40, 28, 700, 1130, 240, 168)
   g.drawImage(s.canvas, 432, 700, 40, 28, 960, 1130, 240, 168)
+  // the faint end of the size-1 pressure taper
+  g.drawImage(s.canvas, 1500, 186, 120, 28, 1240, 1130, 720, 168)
   g.strokeStyle = '#e8564f'; g.lineWidth = 2
   g.strokeRect(1, 1131, 598, 166)
   g.strokeRect(701, 1131, 238, 166)
   g.strokeRect(961, 1131, 238, 166)
+  g.strokeRect(1241, 1131, 718, 166)
   return c.toDataURL('image/png')
 })()`
 
@@ -118,8 +176,17 @@ app.whenReady().then(async () => {
   await win.loadFile(path.join(root, 'out/renderer/index.html'), { search: 'debug' })
   await new Promise((r) => setTimeout(r, 1500))
   const info = await win.webContents.executeJavaScript(SCRIPT)
-  const dataUrl = await win.webContents.executeJavaScript(GRAB)
-  await fs.writeFile(out, Buffer.from(dataUrl.split(',')[1], 'base64'))
-  process.stdout.write('RENDERED ' + JSON.stringify({ out, info }) + '\n')
+
+  const sheet = await win.webContents.executeJavaScript(GRAB)
+  await fs.writeFile(out, Buffer.from(sheet.split(',')[1], 'base64'))
+
+  // The viewport at 20%: a separate file, because it answers a separate question.
+  await win.webContents.executeJavaScript(ZOOM(0.2))
+  await new Promise((r) => setTimeout(r, 400))
+  const view = await win.webContents.executeJavaScript(GRAB_VIEW)
+  const viewOut = out.replace(/\.png$/, '-zoom.png')
+  await fs.writeFile(viewOut, Buffer.from(view.split(',')[1], 'base64'))
+
+  process.stdout.write('RENDERED ' + JSON.stringify({ out, viewOut, info }) + '\n')
   app.exit(0)
 })
