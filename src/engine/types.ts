@@ -67,5 +67,10 @@ export type CursorStyle = 'brush' | 'dot' | 'crosshair'
 
 export const CURSOR_STYLES: CursorStyle[] = ['brush', 'dot', 'crosshair']
 
+/** Display-only sampling used when the document is mapped onto the viewport. */
+export type CanvasScalingMode = 'auto' | 'smooth' | 'nearest'
+
+export const CANVAS_SCALING_MODES: CanvasScalingMode[] = ['auto', 'smooth', 'nearest']
+
 export const clamp = (v: number, a: number, b: number): number => (v < a ? a : v > b ? b : v)
 export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t

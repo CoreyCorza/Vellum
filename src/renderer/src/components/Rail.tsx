@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useEditorState } from '../useEditor'
 import type { ToolId } from '@engine/types'
+import {
+  anchorForFloatingPosition,
+  constrainFloatingPosition,
+  loadFloatingAnchor,
+  positionForFloatingAnchor,
+  saveFloatingAnchor,
+  type FloatingAnchor
+} from './floatingPosition'
 
 const icons: Record<string, JSX.Element> = {
   brush: (
@@ -54,31 +62,18 @@ const Icon = ({ name }: { name: string }): JSX.Element => (
   <svg viewBox="0 0 24 24">{icons[name]}</svg>
 )
 
-const constrainPosition = (
-  rail: HTMLDivElement,
-  position: { x: number; y: number }
-): { x: number; y: number } => {
-  const root = rail.parentElement
-  if (!root) return position
-
-  const margin = 4
-  const statusHeight = root.querySelector<HTMLElement>('#status')?.offsetHeight ?? 0
-  const maxX = Math.max(margin, root.clientWidth - rail.offsetWidth - margin)
-  const maxY = Math.max(
-    margin,
-    root.clientHeight - statusHeight - rail.offsetHeight - margin
-  )
-
-  return {
-    x: Math.max(margin, Math.min(maxX, position.x)),
-    y: Math.max(margin, Math.min(maxY, position.y))
-  }
-}
-
 export function Rail({ onExport }: { onExport: () => void }): JSX.Element {
   const editor = useEditorState()
   const railRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null)
+  const anchor = useRef<FloatingAnchor>(
+    loadFloatingAnchor('toolbar', {
+      horizontal: 'left',
+      vertical: 'top',
+      offsetX: 10,
+      offsetY: 10
+    })
+  )
   const [position, setPosition] = useState({ x: 10, y: 10 })
 
   const moveRail = (clientX: number, clientY: number): void => {
@@ -87,12 +82,12 @@ export function Rail({ onExport }: { onExport: () => void }): JSX.Element {
     if (!rail || !root || !drag.current) return
 
     const rootRect = root.getBoundingClientRect()
-    setPosition(
-      constrainPosition(rail, {
-        x: clientX - rootRect.left - drag.current.offsetX,
-        y: clientY - rootRect.top - drag.current.offsetY
-      })
-    )
+    const next = constrainFloatingPosition(rail, {
+      x: clientX - rootRect.left - drag.current.offsetX,
+      y: clientY - rootRect.top - drag.current.offsetY
+    })
+    anchor.current = anchorForFloatingPosition(rail, next)
+    setPosition(next)
   }
 
   useEffect(() => {
@@ -101,10 +96,11 @@ export function Rail({ onExport }: { onExport: () => void }): JSX.Element {
     if (!rail || !root) return
 
     const keepOnscreen = (): void => {
-      setPosition((current) => constrainPosition(rail, current))
+      setPosition(positionForFloatingAnchor(rail, anchor.current))
     }
     const observer = new ResizeObserver(keepOnscreen)
     observer.observe(root)
+    observer.observe(rail)
     keepOnscreen()
 
     return () => observer.disconnect()
@@ -146,9 +142,11 @@ export function Rail({ onExport }: { onExport: () => void }): JSX.Element {
         onPointerUp={(event) => {
           if (drag.current?.pointerId !== event.pointerId) return
           drag.current = null
+          saveFloatingAnchor('toolbar', anchor.current)
           event.currentTarget.releasePointerCapture(event.pointerId)
         }}
         onLostPointerCapture={() => {
+          if (drag.current) saveFloatingAnchor('toolbar', anchor.current)
           drag.current = null
         }}
       >

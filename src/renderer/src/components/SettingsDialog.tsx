@@ -1,8 +1,21 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useEditorState } from '../useEditor'
 import { setWintabEnabled, wintabStatus, type WintabStatus } from '../platform'
 import { savePrefs } from '../prefs'
-import { CURSOR_STYLES, type CursorStyle } from '@engine/types'
+import {
+  anchorForFloatingPosition,
+  constrainFloatingPosition,
+  loadFloatingAnchor,
+  positionForFloatingAnchor,
+  saveFloatingAnchor,
+  type FloatingAnchor,
+  type FloatingPoint
+} from './floatingPosition'
+import {
+  CURSOR_STYLES,
+  type CanvasScalingMode,
+  type CursorStyle
+} from '@engine/types'
 
 const TABS = ['Tablet', 'Cursor', 'Canvas', 'Appearance'] as const
 type Tab = (typeof TABS)[number]
@@ -58,6 +71,21 @@ const CURSOR_LABEL: Record<CursorStyle, { name: string; blurb: string }> = {
 export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Element {
   const editor = useEditorState()
   const [tab, setTab] = useState<Tab>('Tablet')
+  const panelRef = useRef<HTMLDivElement>(null)
+  const drag = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null)
+  const defaultPosition = {
+    x: Math.max(4, (window.innerWidth - 620) / 2),
+    y: Math.max(4, (window.innerHeight - 50 - 420) / 2)
+  }
+  const anchor = useRef<FloatingAnchor>(
+    loadFloatingAnchor('settings-dialog', {
+      horizontal: 'left',
+      vertical: 'top',
+      offsetX: defaultPosition.x,
+      offsetY: defaultPosition.y
+    })
+  )
+  const [position, setPosition] = useState<FloatingPoint>(defaultPosition)
 
   // Tri-state: `undefined` is still loading, `null` means there is no Wintab
   // service to ask (browser mode, or a non-Windows build).
@@ -82,6 +110,35 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  useEffect(() => {
+    const panel = panelRef.current
+    const root = panel?.parentElement
+    if (!panel || !root) return
+
+    const keepOnscreen = (): void => {
+      setPosition(positionForFloatingAnchor(panel, anchor.current))
+    }
+    const observer = new ResizeObserver(keepOnscreen)
+    observer.observe(root)
+    observer.observe(panel)
+    keepOnscreen()
+    return () => observer.disconnect()
+  }, [])
+
+  const movePanel = (clientX: number, clientY: number): void => {
+    const panel = panelRef.current
+    const root = panel?.parentElement
+    if (!panel || !root || !drag.current) return
+
+    const rootRect = root.getBoundingClientRect()
+    const next = constrainFloatingPosition(panel, {
+      x: clientX - rootRect.left - drag.current.offsetX,
+      y: clientY - rootRect.top - drag.current.offsetY
+    })
+    anchor.current = anchorForFloatingPosition(panel, next)
+    setPosition(next)
+  }
+
   const toggleWintab = async (on: boolean): Promise<void> => {
     setBusy(true)
     // Turning it off simply stops the service forwarding samples. The engine
@@ -97,12 +154,55 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
     savePrefs({ cursorStyle: style })
   }
 
+  const chooseCanvasScaling = (mode: CanvasScalingMode): void => {
+    editor.setCanvasScalingMode(mode)
+    savePrefs({ canvasScalingMode: mode })
+  }
+
   const caps = status?.caps
 
   return (
-    <div className="modal-scrim" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal modal-wide" role="dialog" aria-modal="true" aria-label="Settings">
-        <div className="modal-head">
+    <div className="modal-scrim settings-scrim">
+      <div
+        ref={panelRef}
+        className="modal modal-wide settings-window"
+        role="dialog"
+        aria-label="Settings"
+        style={{ left: position.x, top: position.y }}
+      >
+        <div
+          className="modal-head"
+          onPointerDown={(event) => {
+            if (
+              event.button !== 0 ||
+              !panelRef.current ||
+              (event.target as HTMLElement).closest('button')
+            ) return
+            const bounds = panelRef.current.getBoundingClientRect()
+            drag.current = {
+              pointerId: event.pointerId,
+              offsetX: event.clientX - bounds.left,
+              offsetY: event.clientY - bounds.top
+            }
+            event.currentTarget.setPointerCapture(event.pointerId)
+            event.preventDefault()
+          }}
+          onPointerMove={(event) => {
+            if (drag.current?.pointerId === event.pointerId) {
+              movePanel(event.clientX, event.clientY)
+            }
+          }}
+          onPointerUp={(event) => {
+            if (drag.current?.pointerId !== event.pointerId) return
+            drag.current = null
+            saveFloatingAnchor('settings-dialog', anchor.current)
+            event.currentTarget.releasePointerCapture(event.pointerId)
+          }}
+          onLostPointerCapture={() => {
+            if (drag.current) saveFloatingAnchor('settings-dialog', anchor.current)
+            drag.current = null
+          }}
+        >
           <span>Settings</span>
           <button className="modal-close" onClick={onClose} title="Close (Esc)">
             ✕
@@ -228,7 +328,31 @@ export function SettingsDialog({ onClose }: { onClose: () => void }): JSX.Elemen
 
             {tab === 'Canvas' && (
               <div className="sec">
-                <h2>Canvas</h2>
+                <h2>Display</h2>
+                <div className="setting-row">
+                  <label htmlFor="canvas-scaling">
+                    <strong>Canvas scaling</strong>
+                    <span className="hint">
+                      Controls how document pixels are sampled while zooming.
+                    </span>
+                  </label>
+                  <select
+                    id="canvas-scaling"
+                    value={editor.canvasScalingMode}
+                    onChange={(event) =>
+                      chooseCanvasScaling(event.target.value as CanvasScalingMode)
+                    }
+                  >
+                    <option value="auto">Auto / High Quality</option>
+                    <option value="smooth">Always Smooth</option>
+                    <option value="nearest">Nearest Neighbour</option>
+                  </select>
+                </div>
+                <p className="hint setting-note">
+                  Auto smooths the canvas below 200% to avoid aliasing when several document
+                  pixels share one screen pixel. At 200% and above it switches to crisp,
+                  pixel-exact display. This never changes the artwork itself.
+                </p>
                 <p className="hint">
                   Default document size and background are fixed for now — they arrive with the
                   document format.

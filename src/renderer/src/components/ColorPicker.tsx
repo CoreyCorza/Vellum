@@ -81,6 +81,7 @@ export function ColorPicker({
   const [hsv, setHsv] = useState<[number, number, number]>([32, 0.1, 0.91])
   const [text, setText] = useState(color)
   const [mode, setMode] = useState<ColorMode>('hsv')
+  const [canvasRevision, setCanvasRevision] = useState(0)
 
   // Adopt colours set from elsewhere (eyedropper, swatch, preset) without
   // fighting the user's own dragging: only resync when the hex actually differs
@@ -108,24 +109,50 @@ export function ColorPicker({
     const sv = svRef.current
     const hue = hueRef.current
     if (!sv || !hue) return
+
+    const observer = new ResizeObserver(() => setCanvasRevision((value) => value + 1))
+    observer.observe(sv)
+    observer.observe(hue)
+    return () => observer.disconnect()
+  }, [])
+
+  useEffect(() => {
+    const sv = svRef.current
+    const hue = hueRef.current
+    if (!sv || !hue) return
     const [h, s, v] = hsv
+    const dpr = window.devicePixelRatio || 1
+    const svWidth = sv.clientWidth
+    const svHeight = sv.clientHeight
+    const hueWidth = hue.clientWidth
+    const hueHeight = hue.clientHeight
+
+    const resizeBackingStore = (canvas: HTMLCanvasElement, width: number, height: number): void => {
+      const pixelWidth = Math.max(1, Math.round(width * dpr))
+      const pixelHeight = Math.max(1, Math.round(height * dpr))
+      if (canvas.width !== pixelWidth) canvas.width = pixelWidth
+      if (canvas.height !== pixelHeight) canvas.height = pixelHeight
+    }
+    resizeBackingStore(sv, svWidth, svHeight)
+    resizeBackingStore(hue, hueWidth, hueHeight)
 
     const c = sv.getContext('2d')
     if (c) {
+      c.setTransform(dpr, 0, 0, dpr, 0, 0)
       c.fillStyle = `hsl(${h},100%,50%)`
-      c.fillRect(0, 0, sv.width, sv.height)
-      let g = c.createLinearGradient(0, 0, sv.width, 0)
+      c.fillRect(0, 0, svWidth, svHeight)
+      let g = c.createLinearGradient(0, 0, svWidth, 0)
       g.addColorStop(0, '#fff')
       g.addColorStop(1, 'rgba(255,255,255,0)')
       c.fillStyle = g
-      c.fillRect(0, 0, sv.width, sv.height)
-      g = c.createLinearGradient(0, 0, 0, sv.height)
+      c.fillRect(0, 0, svWidth, svHeight)
+      g = c.createLinearGradient(0, 0, 0, svHeight)
       g.addColorStop(0, 'rgba(0,0,0,0)')
       g.addColorStop(1, '#000')
       c.fillStyle = g
-      c.fillRect(0, 0, sv.width, sv.height)
-      const px = s * sv.width
-      const py = (1 - v) * sv.height
+      c.fillRect(0, 0, svWidth, svHeight)
+      const px = s * svWidth
+      const py = (1 - v) * svHeight
       c.beginPath()
       c.arc(px, py, 5, 0, Math.PI * 2)
       c.strokeStyle = '#000'
@@ -138,13 +165,14 @@ export function ColorPicker({
 
     const k = hue.getContext('2d')
     if (k) {
-      const g = k.createLinearGradient(0, 0, hue.width, 0)
+      k.setTransform(dpr, 0, 0, dpr, 0, 0)
+      const g = k.createLinearGradient(0, 0, hueWidth, 0)
       for (let i = 0; i <= 6; i++) g.addColorStop(i / 6, `hsl(${i * 60},100%,50%)`)
       k.fillStyle = g
-      k.fillRect(0, 0, hue.width, hue.height)
-      const hx = (h / 360) * hue.width
+      k.fillRect(0, 0, hueWidth, hueHeight)
+      const hx = (h / 360) * hueWidth
       k.beginPath()
-      k.rect(hx - 2, 0, 4, hue.height)
+      k.rect(hx - 2, 0, 4, hueHeight)
       k.strokeStyle = '#000'
       k.lineWidth = 3
       k.stroke()
@@ -152,7 +180,7 @@ export function ColorPicker({
       k.lineWidth = 1.5
       k.stroke()
     }
-  }, [hsv])
+  }, [hsv, canvasRevision])
 
   const emit = (next: [number, number, number]): void => {
     setHsv(next)

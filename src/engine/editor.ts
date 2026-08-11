@@ -7,7 +7,15 @@ import { StrokeEngine } from './brush/stroke'
 import { NavDrag } from './gestures'
 import { GLStrokeRenderer } from './gl/strokeRenderer'
 import { DEFAULT_BRUSH, type BrushSettings } from './brush/settings'
-import type { BlendMode, CursorStyle, Pt, Rect, StrokePoint, ToolId } from './types'
+import type {
+  BlendMode,
+  CanvasScalingMode,
+  CursorStyle,
+  Pt,
+  Rect,
+  StrokePoint,
+  ToolId
+} from './types'
 import { clamp } from './types'
 import { MipPyramid } from './mipmap'
 
@@ -151,9 +159,15 @@ export class Editor {
 
   cursor = { x: -9999, y: -9999, visible: false }
   cursorStyle: CursorStyle = 'brush'
+  canvasScalingMode: CanvasScalingMode = 'auto'
 
   setCursorStyle(style: CursorStyle): void {
     this.cursorStyle = style
+    this.invalidate()
+    this.ui.emit()
+  }
+  setCanvasScalingMode(mode: CanvasScalingMode): void {
+    this.canvasScalingMode = mode
     this.invalidate()
     this.ui.emit()
   }
@@ -567,18 +581,24 @@ export class Editor {
       g.drawImage(lvl.canvas, 0, 0, lvl.width, lvl.height, 0, 0, doc.width, doc.height)
     }
 
+    const mode = this.canvasScalingMode
     if (camera.scale <= 1) {
       // Shrinking. One bilinear tap cannot represent a 4x reduction, which is
       // what the mip pyramid is for; 'high' is the right filter once the level
-      // is close to the target size. See engine/mipmap.ts.
-      g.imageSmoothingEnabled = true
+      // is close to the target size. See engine/mipmap.ts. 'nearest' is honoured
+      // here too, for anyone who wants to see exactly which pixels survived.
+      g.imageSmoothingEnabled = mode !== 'nearest'
       g.imageSmoothingQuality = 'high'
       blit()
+    } else if (mode === 'smooth' || mode === 'nearest') {
+      g.imageSmoothingEnabled = mode === 'smooth'
+      g.imageSmoothingQuality = 'low'
+      blit()
     } else {
-      // Magnifying. Nearest is crisp but goes blocky; smooth is soft. Both are
-      // wrong somewhere, so instead of snapping between them at a threshold this
-      // cross-fades across the band: two blits of the same image, the smooth one
-      // over the crisp one at partial alpha.
+      // 'auto', magnifying. Nearest is crisp but goes blocky; smooth is soft.
+      // Both are wrong somewhere, so rather than snap between them at a
+      // threshold this cross-fades across the band: two blits of the same image,
+      // the smooth one over the crisp one at partial alpha.
       //
       // The snap is the part people notice. Photoshop and Krita both snap around
       // 200%. Clip Studio ramps instead and it is invisible — you can use it for
