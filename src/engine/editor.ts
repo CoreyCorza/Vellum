@@ -7,7 +7,15 @@ import { StrokeEngine } from './brush/stroke'
 import { NavDrag } from './gestures'
 import { GLStrokeRenderer } from './gl/strokeRenderer'
 import { DEFAULT_BRUSH, type BrushSettings } from './brush/settings'
-import type { BlendMode, CursorStyle, Pt, Rect, StrokePoint, ToolId } from './types'
+import type {
+  BlendMode,
+  CanvasScalingMode,
+  CursorStyle,
+  Pt,
+  Rect,
+  StrokePoint,
+  ToolId
+} from './types'
 import { clamp } from './types'
 
 class Emitter {
@@ -131,9 +139,15 @@ export class Editor {
 
   cursor = { x: -9999, y: -9999, visible: false }
   cursorStyle: CursorStyle = 'brush'
+  canvasScalingMode: CanvasScalingMode = 'auto'
 
   setCursorStyle(style: CursorStyle): void {
     this.cursorStyle = style
+    this.invalidate()
+    this.ui.emit()
+  }
+  setCanvasScalingMode(mode: CanvasScalingMode): void {
+    this.canvasScalingMode = mode
     this.invalidate()
     this.ui.emit()
   }
@@ -539,7 +553,13 @@ export class Editor {
       g.fillRect(0, 0, doc.width, doc.height)
     }
 
-    g.imageSmoothingEnabled = camera.scale < 2.5
+    // Like Krita's default display mode: use a high-quality downscaled view,
+    // then expose exact document pixels once each one covers at least 2x2
+    // screen pixels. This affects presentation only, never stored artwork.
+    g.imageSmoothingQuality = 'high'
+    g.imageSmoothingEnabled =
+      this.canvasScalingMode === 'smooth' ||
+      (this.canvasScalingMode === 'auto' && camera.scale < 2)
     g.drawImage(composed.canvas, 0, 0)
 
     g.lineWidth = 1 / camera.scale

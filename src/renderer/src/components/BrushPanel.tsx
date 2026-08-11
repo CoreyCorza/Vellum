@@ -140,7 +140,13 @@ export function BrushPanel(): JSX.Element {
         />
       </FloatingPanel>
 
-      <FloatingPanel id="layers-panel" title="Layers" initialTop={367} initialRight={240}>
+      <FloatingPanel
+        id="layers-panel"
+        title="Layers"
+        initialTop={367}
+        initialRight={240}
+        initialHeight={320}
+      >
         <LayersPanel showTitle={false} />
         <div className="sec">
           <h2>Layer fill</h2>

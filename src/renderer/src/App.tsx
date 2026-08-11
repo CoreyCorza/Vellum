@@ -34,7 +34,9 @@ export function App(): JSX.Element {
   // Stored preferences are applied to the engine once, at startup. The engine
   // never reads storage itself — see prefs.ts.
   useEffect(() => {
-    editor.setCursorStyle(loadPrefs().cursorStyle)
+    const prefs = loadPrefs()
+    editor.setCursorStyle(prefs.cursorStyle)
+    editor.setCanvasScalingMode(prefs.canvasScalingMode)
   }, [editor])
 
   const onExport = async (): Promise<void> => {

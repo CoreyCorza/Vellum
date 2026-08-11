@@ -1,4 +1,9 @@
-import { CURSOR_STYLES, type CursorStyle } from '@engine/types'
+import {
+  CANVAS_SCALING_MODES,
+  CURSOR_STYLES,
+  type CanvasScalingMode,
+  type CursorStyle
+} from '@engine/types'
 
 /**
  * App-wide preferences.
@@ -10,12 +15,14 @@ import { CURSOR_STYLES, type CursorStyle } from '@engine/types'
  */
 export interface Prefs {
   cursorStyle: CursorStyle
+  canvasScalingMode: CanvasScalingMode
 }
 
 const KEY = 'vellum.prefs'
 
 export const DEFAULT_PREFS: Prefs = {
-  cursorStyle: 'brush'
+  cursorStyle: 'brush',
+  canvasScalingMode: 'auto'
 }
 
 export function loadPrefs(): Prefs {
@@ -28,7 +35,12 @@ export function loadPrefs(): Prefs {
       // otherwise put the renderer into a state it has no branch for.
       cursorStyle: CURSOR_STYLES.includes(parsed.cursorStyle as CursorStyle)
         ? (parsed.cursorStyle as CursorStyle)
-        : DEFAULT_PREFS.cursorStyle
+        : DEFAULT_PREFS.cursorStyle,
+      canvasScalingMode: CANVAS_SCALING_MODES.includes(
+        parsed.canvasScalingMode as CanvasScalingMode
+      )
+        ? (parsed.canvasScalingMode as CanvasScalingMode)
+        : DEFAULT_PREFS.canvasScalingMode
     }
   } catch {
     return { ...DEFAULT_PREFS }
