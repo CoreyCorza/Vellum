@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "start": "electron-vite preview",
     "smoke": "npm run -s precheck && electron scripts/smoke-main.cjs",
-    "verify": "npm run -s precheck && electron scripts/verify-main.cjs && electron scripts/verify-curves.cjs && electron scripts/verify-curve-slider.cjs && electron scripts/verify-gestures.cjs && electron scripts/verify-flow-opacity.cjs",
+    "verify": "npm run -s precheck && electron scripts/verify-main.cjs && electron scripts/verify-curves.cjs && electron scripts/verify-curve-slider.cjs && electron scripts/verify-gestures.cjs && electron scripts/verify-flow-opacity.cjs && electron scripts/verify-edge-quality.cjs",
     "penprop": "npm run -s precheck && electron scripts/verify-pen-prop.cjs",
     "wintab": "npm run -s precheck && electron scripts/verify-wintab-input.cjs",
     "stabiliser": "npm run -s precheck && electron scripts/measure-stabiliser.cjs",

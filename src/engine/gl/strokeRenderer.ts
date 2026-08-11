@@ -63,6 +63,10 @@ void main() {
 
 const FRAG_DAB = `#version 300 es
 precision highp float;
+// Width of the antialiasing band at a dab's rim, in document pixels. Wider than
+// one pixel deliberately — see the note in main().
+#define AA_PX 1.5
+
 in vec2 vOffset;
 in vec2 vPrev;
 uniform sampler2D uPrev;
@@ -87,12 +91,45 @@ void main() {
   // which is what made a 1px brush draw a dashed line.
   float rimPx = uRadius + 0.5;
 
-  // Hardness sets where the falloff starts; the ramp is never narrower than a
-  // pixel, so the edge is antialiased at every size and every hardness. A
-  // single smoothstep, so nothing here can cancel anything else out.
+  // Hardness sets where the falloff starts. The ramp never gets narrower than
+  // AA_PX, so there is always an antialiasing band at every size and hardness.
+  //
+  // AA_PX is wider than one pixel on purpose. At exactly 1.0, pixel centres are
+  // spaced the full width of the band, so on some edge angles one sample lands
+  // at coverage 1 and the next at 0 with nothing in between — a black pixel
+  // touching a white one, with no transition.
+  // The band is bounded at both ends, and both bounds matter.
+  //
+  // Too wide and a small hard brush never reaches full coverage anywhere, so a
+  // 2px line draws grey: at radius 1, a 1.5px band spans the entire dab. Too
+  // narrow and adjacent pixel centres straddle the whole band, which is the
+  // solid-touching-empty case. Coverage at the centre is rimPx / band, so a
+  // solid core needs band <= 1.5; samples step by 1 / band, so a transition
+  // pixel needs band >= ~1.1. 1.25 sits inside that window at radius 1.
+  // ...and the floor cannot exceed rimPx either, or a SUB-pixel dab never
+  // reaches full coverage even at its own centre and a 1px line draws pale.
+  float aaPx = clamp(uRadius, min(1.25, rimPx), AA_PX);
   float innerPx = uHardness * uRadius;
-  float rampPx = max(1.0, rimPx - innerPx);
-  float mskAlpha = 1.0 - smoothstep(rimPx - rampPx, rimPx, dPx);
+  float rampPx = max(aaPx, rimPx - innerPx);
+
+  // 0 outside the rim, 1 at the inner end of the ramp.
+  float x = clamp((rimPx - dPx) / rampPx, 0.0, 1.0);
+
+  // Two different jobs, so two different curves.
+  //
+  // Where the ramp IS just the antialiasing band, what the value should express
+  // is how much of the pixel the shape covers, and for an edge crossing a pixel
+  // that is close to LINEAR. Shaping it with smoothstep instead was the other
+  // half of the hard-edge problem: smoothstep pushes 0.1 down to 0.03 and 0.9 up
+  // to 0.97, so the few intermediate samples that exist get crushed to black and
+  // white anyway.
+  //
+  // Once hardness opens the ramp well past the band, the curve stops being about
+  // coverage and becomes the look of a soft brush, where smoothstep's eased
+  // shoulders are what is wanted. So blend between them on ramp width.
+  float shaped = x * x * (3.0 - 2.0 * x);
+  float soft = clamp((rampPx - aaPx) / aaPx, 0.0, 1.0);
+  float mskAlpha = mix(x, shaped, soft);
   float dstAlpha = texture(uPrev, vPrev).a;
 
   // Krita, verbatim. The comparison is the whole point: without it a lighter
@@ -103,7 +140,19 @@ void main() {
     : dstAlpha;
 
   float a = mix(dstAlpha, fullFlowAlpha, uFlow);
-  oCol = vec4(0.0, 0.0, 0.0, a);
+
+  // A dab may not push a pixel past its OWN coverage. Without this the ramp the
+  // mask so carefully computes does not survive the stroke: dabs land every half
+  // pixel, so a pixel in the antialiasing band is hit by a dozen of them, and
+  // 1 - (1 - m)^12 drives even a small m to nearly full. The band collapses to
+  // less than a pixel and the edge comes out chewed — which is why widening the
+  // band alone fixed nothing.
+  //
+  // Clamping to the dab's own coverage makes the alpha of a stroke the MAXIMUM
+  // over its dabs rather than their sum, so it equals the coverage of the swept
+  // shape. That is Krita's "hard" AlphaDarken wrapper as opposed to "creamy",
+  // and it is what keeps a hard edge one pixel wide instead of zero.
+  oCol = vec4(0.0, 0.0, 0.0, min(a, max(dstAlpha, mskAlpha * uCeiling)));
 }`
 
 const VERT_RESOLVE = `#version 300 es
