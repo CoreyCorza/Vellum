@@ -150,9 +150,16 @@ void main() {
   //
   // Clamping to the dab's own coverage makes the alpha of a stroke the MAXIMUM
   // over its dabs rather than their sum, so it equals the coverage of the swept
-  // shape. That is Krita's "hard" AlphaDarken wrapper as opposed to "creamy",
-  // and it is what keeps a hard edge one pixel wide instead of zero.
-  oCol = vec4(0.0, 0.0, 0.0, min(a, max(dstAlpha, mskAlpha * uCeiling)));
+  // shape. That is Krita's "hard" AlphaDarken wrapper as opposed to "creamy".
+  //
+  // But it only belongs where the ramp IS the antialiasing band. Applied to a
+  // soft brush it also stops overlapping passes from building on each other, so
+  // the inside of a loop never fills in and a pale seam appears wherever the
+  // stroke crosses itself — Krita picks one wrapper per preset for exactly this
+  // reason. The soft factor is already 0 when the ramp is just the band and 1
+  // once hardness has opened it, so it selects between them.
+  float capped = min(a, max(dstAlpha, mskAlpha * uCeiling));
+  oCol = vec4(0.0, 0.0, 0.0, mix(capped, a, soft));
 }`
 
 const VERT_RESOLVE = `#version 300 es

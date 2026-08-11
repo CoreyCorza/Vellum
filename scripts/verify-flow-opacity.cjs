@@ -138,16 +138,23 @@ const SCRIPT = `(() => {
     return lo >= 0 && hi >= 0 ? hi - lo : -1
   }
   R.edge = { singlePass: ramp(1), doubleBack: ramp(2) }
-  // A soft edge must not harden when a stroke doubles back over itself.
+  // A soft edge must not harden into a hard one when a stroke doubles back.
   //
-  // This was relaxed to 0.7 once, on the theory that the ramp legitimately
-  // compresses because each dab moves a pixel by flow x mask x (ceiling - dst)
-  // and pixels further from the ceiling gain more. That reasoning was correct
-  // about the formula and wrong about the engine: the accumulation itself was the
-  // bug. Clamping each dab to its own coverage removed it, and the two numbers
-  // are now identical rather than merely close. Back to a strict bound, because
-  // the loose one was hiding a real defect.
-  R.edgeOk = R.edge.singlePass > 8 && R.edge.doubleBack >= R.edge.singlePass * 0.9
+  // The history of this number is worth keeping, because it has been moved for
+  // both good and bad reasons. 0.85 was an original guess. It was relaxed to 0.7
+  // on the argument that the ramp compresses legitimately -- each dab moves a
+  // pixel by flow x mask x (ceiling - dst), so pixels further from the ceiling
+  // gain more. Then it was tightened to 0.9 after a change appeared to make the
+  // two numbers identical; that measurement came from a stale build and was not
+  // real.
+  //
+  // What is actually true: a soft brush MUST accumulate, because accumulation is
+  // what makes overlapping passes fill in the inside of a loop instead of
+  // leaving a pale seam. Accumulation compresses the ramp somewhat. Suppressing
+  // it makes this number perfect and the picture wrong, which is exactly the
+  // trade that was tried and reverted. So the bound stays loose enough to allow
+  // real accumulation and tight enough to catch a collapse to a hard edge.
+  R.edgeOk = R.edge.singlePass > 8 && R.edge.doubleBack >= R.edge.singlePass * 0.7
 
   // --- 6. flow still builds up across passes ------------------------------
   const build = (passes) => { fresh(); set({ flow: 0.05 }); drawStroke(lineY(700, 1), passes); return alphaAt(1000, 700) }

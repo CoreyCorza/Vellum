@@ -23,7 +23,8 @@
     "dist:installer": "npm run build && electron-builder --win",
     "looks": "npm run -s precheck && electron-vite build && electron scripts/looks.cjs",
     "precheck": "node scripts/check-syntax.cjs",
-    "zoomband": "npm run -s precheck && electron-vite build && electron scripts/looks-zoomband.cjs"
+    "zoomband": "npm run -s precheck && electron-vite build && electron scripts/looks-zoomband.cjs",
+    "softloops": "npm run -s precheck && electron-vite build && electron scripts/looks-soft-loops.cjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
