@@ -13,15 +13,16 @@
     "build": "npm run typecheck && electron-vite build",
     "typecheck": "tsc --noEmit",
     "start": "electron-vite preview",
-    "smoke": "electron scripts/smoke-main.cjs",
-    "verify": "electron scripts/verify-main.cjs && electron scripts/verify-curves.cjs && electron scripts/verify-curve-slider.cjs && electron scripts/verify-gestures.cjs && electron scripts/verify-flow-opacity.cjs",
-    "penprop": "electron scripts/verify-pen-prop.cjs",
-    "wintab": "electron scripts/verify-wintab-input.cjs",
-    "stabiliser": "electron scripts/measure-stabiliser.cjs",
-    "bench:wintab": "electron scripts/wintab-bench/main.cjs",
+    "smoke": "npm run -s precheck && electron scripts/smoke-main.cjs",
+    "verify": "npm run -s precheck && electron scripts/verify-main.cjs && electron scripts/verify-curves.cjs && electron scripts/verify-curve-slider.cjs && electron scripts/verify-gestures.cjs && electron scripts/verify-flow-opacity.cjs",
+    "penprop": "npm run -s precheck && electron scripts/verify-pen-prop.cjs",
+    "wintab": "npm run -s precheck && electron scripts/verify-wintab-input.cjs",
+    "stabiliser": "npm run -s precheck && electron scripts/measure-stabiliser.cjs",
+    "bench:wintab": "npm run -s precheck && electron scripts/wintab-bench/main.cjs",
     "dist": "npm run build && electron-builder --win --dir",
     "dist:installer": "npm run build && electron-builder --win",
-    "looks": "electron-vite build && electron scripts/looks.cjs"
+    "looks": "npm run -s precheck && electron-vite build && electron scripts/looks.cjs",
+    "precheck": "node scripts/check-syntax.cjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
