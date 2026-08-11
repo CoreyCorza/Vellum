@@ -29,8 +29,6 @@
  * around that. Blending is off — the shader computes the final value itself.
  */
 
-const TIP_RESOLUTION = 128
-
 /** Both draws use the same geometry: the dab's bounding box. */
 const VERT_DAB = `#version 300 es
 in vec2 aUnit;
@@ -62,13 +60,30 @@ const FRAG_DAB = `#version 300 es
 precision highp float;
 in vec2 vTip;
 in vec2 vPrev;
-uniform sampler2D uTip;
 uniform sampler2D uPrev;
 uniform float uFlow;
 uniform float uCeiling;
+uniform float uHardness;
+uniform float uRadius;
 out vec4 oCol;
 void main() {
-  float mskAlpha = texture(uTip, vTip).a;
+  // Distance from the dab centre: 0 at the centre, 1 at the rim.
+  float d = length(vTip - 0.5) * 2.0;
+
+  // The falloff is evaluated here rather than sampled from a sprite. A sprite
+  // has one fixed resolution, so a brush wider than it got a magnified rim
+  // (visibly faceted) and a brush narrower than it got a minified one
+  // (aliased) — and 8-bit sprite alpha banded the ramp on top of that.
+  // Capped just below 1 so smoothstep never sees a zero-width edge.
+  float h = min(uHardness, 0.995);
+  float profile = 1.0 - smoothstep(h, 1.0, d);
+
+  // Half a document pixel of coverage at the outer edge, expressed in pixels
+  // rather than as a fraction of the radius, so a 2px brush and a 500px brush
+  // are both antialiased by the same amount — one pixel.
+  float coverage = clamp((1.0 - d) * uRadius + 0.5, 0.0, 1.0);
+
+  float mskAlpha = profile * coverage;
   float dstAlpha = texture(uPrev, vPrev).a;
 
   // Krita, verbatim. The comparison is the whole point: without it a lighter
@@ -155,7 +170,6 @@ export class GLStrokeRenderer implements DabTarget {
   private scratch: Target
   private isFloat = false
 
-  private tips = new Map<number, WebGLTexture>()
 
   private u: Record<string, Record<string, WebGLUniformLocation | null>> = {}
 
@@ -193,7 +207,7 @@ export class GLStrokeRenderer implements DabTarget {
     gl.bindBuffer(gl.ARRAY_BUFFER, quad)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW)
 
-    const names = ['uCentre', 'uRadius', 'uView', 'uTip', 'uPrev', 'uSrc', 'uFlow', 'uCeiling', 'uAccum', 'uColour']
+    const names = ['uCentre', 'uRadius', 'uView', 'uPrev', 'uSrc', 'uFlow', 'uCeiling', 'uHardness', 'uAccum', 'uColour']
     for (const [key, prog] of [
       ['dab', this.dabProg],
       ['copy', this.copyProg],
@@ -238,53 +252,6 @@ export class GLStrokeRenderer implements DabTarget {
       throw new Error('stroke framebuffer incomplete')
     }
     return { tex, fbo }
-  }
-
-  private tipTexture(hardness: number): WebGLTexture {
-    const gl = this.gl
-    const key = Math.round(Math.max(0, Math.min(1, hardness)) * 200)
-    const existing = this.tips.get(key)
-    if (existing) return existing
-
-    const h = Math.min(key / 200, 0.985)
-    const S = TIP_RESOLUTION
-    const data = new Uint8Array(S * S * 4)
-    const r = S / 2
-    for (let y = 0; y < S; y++) {
-      for (let x = 0; x < S; x++) {
-        const d = Math.hypot(x - r + 0.5, y - r + 0.5) / r
-        let a: number
-        if (d >= 1) a = 0
-        else if (d <= h) a = 1
-        else {
-          const u = (d - h) / (1 - h)
-          a = 1 - u * u * (3 - 2 * u)
-        }
-        const i = (y * S + x) * 4
-        data[i] = 255
-        data[i + 1] = 255
-        data[i + 2] = 255
-        data[i + 3] = Math.round(a * 255)
-      }
-    }
-    const tex = gl.createTexture()
-    if (!tex) throw new Error('createTexture failed')
-    gl.bindTexture(gl.TEXTURE_2D, tex)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, S, S, 0, gl.RGBA, gl.UNSIGNED_BYTE, data)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-    if (this.tips.size > 24) {
-      const oldest = this.tips.keys().next().value
-      if (oldest !== undefined) {
-        const t = this.tips.get(oldest)
-        if (t) gl.deleteTexture(t)
-        this.tips.delete(oldest)
-      }
-    }
-    this.tips.set(key, tex)
-    return tex
   }
 
   private bindQuad(prog: WebGLProgram): void {
@@ -339,9 +306,7 @@ export class GLStrokeRenderer implements DabTarget {
     gl.uniform1f(this.u.dab.uRadius!, radius)
     gl.uniform1f(this.u.dab.uFlow!, Math.min(1, flow))
     gl.uniform1f(this.u.dab.uCeiling!, Math.min(1, ceiling))
-    gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, this.tipTexture(hardness))
-    gl.uniform1i(this.u.dab.uTip!, 0)
+    gl.uniform1f(this.u.dab.uHardness!, Math.max(0, Math.min(1, hardness)))
     gl.activeTexture(gl.TEXTURE1)
     gl.bindTexture(gl.TEXTURE_2D, this.scratch.tex)
     gl.uniform1i(this.u.dab.uPrev!, 1)
