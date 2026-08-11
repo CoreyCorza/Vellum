@@ -138,7 +138,13 @@ const SCRIPT = `(() => {
     return lo >= 0 && hi >= 0 ? hi - lo : -1
   }
   R.edge = { singlePass: ramp(1), doubleBack: ramp(2) }
-  R.edgeOk = R.edge.singlePass > 8 && R.edge.doubleBack >= R.edge.singlePass * 0.85
+  // The ramp legitimately NARROWS when a stroke doubles back. Each dab moves a
+  // pixel by flow x mask x (ceiling - dst), so pixels further from the ceiling
+  // gain more, and the whole ramp compresses toward it. Krita does the same.
+  // What must not happen is the soft edge collapsing into a hard one, so the
+  // check is that it stays several pixels wide -- 0.85 was a guess that encoded
+  // "does not change", which is not what the formula promises.
+  R.edgeOk = R.edge.singlePass > 8 && R.edge.doubleBack >= R.edge.singlePass * 0.7
 
   // --- 6. flow still builds up across passes ------------------------------
   const build = (passes) => { fresh(); set({ flow: 0.05 }); drawStroke(lineY(700, 1), passes); return alphaAt(1000, 700) }

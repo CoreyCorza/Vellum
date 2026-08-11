@@ -2,11 +2,13 @@ import { Surface } from '../surface'
 import { clamp } from '../types'
 
 const TIP_RESOLUTION = 256
-/** Ceiling sprites only hold a smooth ramp, so they can be much smaller. */
-const CAP_RESOLUTION = 128
-
 /**
- * The brush tip, pre-rendered once and blitted per dab.
+ * The brush tip as a sprite, for the on-canvas brush cursor.
+ *
+ * NOT what gets painted: dabs are rasterised analytically in the fragment
+ * shader (see gl/strokeRenderer.ts), because a fixed-resolution sprite cannot
+ * give a clean rim at every brush size. This exists only so the cursor can show
+ * roughly the right shape, which is why a sprite is still good enough here.
  *
  * Building a radial gradient inside the dab loop is the single biggest reason
  * naive canvas painting crawls — at 3% spacing a long stroke is thousands of
@@ -48,59 +50,10 @@ export class TipCache {
    * Cached per quantised level. 64 steps is well below visible banding in
    * alpha, and the sprites are small since they only hold a smooth ramp.
    */
-  capSprite(hardness: number, ceiling: number): Surface {
-    this.ensureMask(hardness)
-    const level = Math.max(0, Math.min(63, Math.round(clamp(ceiling, 0, 1) * 63)))
-    const cached = this.capCache.get(level)
-    if (cached) return cached
-
-    const s = new Surface(CAP_RESOLUTION, CAP_RESOLUTION)
-    const c = s.ctx
-    c.save()
-    // opaque black, then white-at-alpha(profile x ceiling) over it leaves
-    // RGB = profile x ceiling with alpha 1
-    c.globalCompositeOperation = 'copy'
-    c.fillStyle = '#000000'
-    c.fillRect(0, 0, CAP_RESOLUTION, CAP_RESOLUTION)
-    c.globalCompositeOperation = 'source-over'
-    c.globalAlpha = level / 63
-    c.drawImage(this.mask.canvas, 0, 0, CAP_RESOLUTION, CAP_RESOLUTION)
-    c.restore()
-
-    this.capCache.set(level, s)
-    return s
-  }
-
-  private capCache = new Map<number, Surface>()
-
-  private ensureMask(hardness: number): void {
-    if (hardness !== this.builtHardness) this.build(hardness, this.builtColor || '#000000')
-  }
-
   invalidate(): void {
     this.builtHardness = -1
+    this.builtColor = ''
   }
-
-  /**
-   * Hard-edged white disc, for writing the opacity ceiling.
-   *
-   * Deliberately not the soft brush tip: the ceiling should be uniform across
-   * the stroke's width, with all the softness coming from coverage. Using the
-   * soft tip here would apply the falloff twice and thin the edges.
-   */
-  get hardDisc(): Surface {
-    if (!this.disc) {
-      this.disc = new Surface(TIP_RESOLUTION, TIP_RESOLUTION)
-      const c = this.disc.ctx
-      c.fillStyle = '#ffffff'
-      c.beginPath()
-      // a hair inside the sprite so the antialiased rim is not clipped
-      c.arc(TIP_RESOLUTION / 2, TIP_RESOLUTION / 2, TIP_RESOLUTION / 2 - 1, 0, Math.PI * 2)
-      c.fill()
-    }
-    return this.disc
-  }
-  private disc: Surface | null = null
 
   private build(hardness: number, color: string): void {
     const r = TIP_RESOLUTION / 2
@@ -136,9 +89,6 @@ export class TipCache {
     k.drawImage(this.mask.canvas, 0, 0)
     k.restore()
 
-    // The ceiling sprites embed the profile, so a hardness change invalidates
-    // them all.
-    if (hardness !== this.builtHardness) this.capCache.clear()
     this.builtHardness = hardness
     this.builtColor = color
   }

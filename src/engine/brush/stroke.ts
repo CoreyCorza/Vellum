@@ -450,21 +450,10 @@ export class StrokeEngine {
     const a = this.alphaFor(pressure)
     if (a <= 0.001) return
 
-    // The ceiling buffer, when in use.
-    //
-    // Stored as GREY on an opaque surface and accumulated with `lighten`, which
-    // is a true per-channel max. The strongest paint laid at a pixel therefore
-    // wins, which is what makes a stroke crossing itself keep its darker part
-    // visible instead of a later, lighter pass wiping it out. Alpha has no max
-    // operator in Canvas 2D, hence the detour through colour; Surface.
-    // maskByLuminance converts it back.
-    //
-    // Hard disc, not the soft tip: the ceiling should be uniform across the
-    // stroke's width, with all the softness coming from coverage.
-    // One call, one draw. Coverage and ceiling are separate channels with
-    // separate blend equations inside the renderer — see gl/strokeRenderer.ts.
-    // The eraser uses the identical accumulation; whether the result is added or
-    // subtracted is decided once, at commit, by the composite op.
+    // One call, one draw. The renderer needs the ceiling as well as the flow
+    // because the blend is conditional on it — see gl/strokeRenderer.ts. The
+    // eraser stamps identically; whether the result is added or subtracted is
+    // decided once, at commit, by the composite op.
     target.stampDab(x, y, r, a, this.capFor(pressure), s.hardness)
 
     this.bounds.add(x, y, r + 1)
