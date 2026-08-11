@@ -94,7 +94,7 @@ Pointer Events stays the path on Linux and macOS, where it is already correct.
 **Do not ship stylus-button workarounds in place of this.** The `S`-to-resize
 binding is a convenience, not the answer.
 
-### 1. Document format (`.inkwell`)
+### 1. Document format (`.vellum`)
 Nothing else is safe to build on top of a document you cannot save. Zip of a
 JSON manifest plus one PNG per layer is enough to start; the manifest already
 mirrors `PaintDocument`.

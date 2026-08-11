@@ -18,7 +18,7 @@ function createWindow(): BrowserWindow {
     webPreferences: {
       // .mjs, not .js — package.json is `"type": "module"`, so electron-vite
       // emits an ESM preload. Pointing at .js here fails silently: the bridge
-      // never loads, `window.inkwell` is undefined, and the app quietly
+      // never loads, `window.vellum` is undefined, and the app quietly
       // downgrades to browser fallbacks instead of erroring.
       preload: join(__dirname, '../preload/index.mjs'),
       contextIsolation: true,

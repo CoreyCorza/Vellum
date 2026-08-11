@@ -75,7 +75,7 @@ function getBindings(): Bindings | null {
     const user32 = koffi.load('user32.dll')
     // BOOL SetPropW(HWND, LPCWSTR, HANDLE)
     const SetPropW = user32.func('__stdcall', 'SetPropW', 'bool', ['void *', 'str16', 'void *'])
-    const EnumChildProc = koffi.proto('bool __stdcall InkwellEnumChildProc(void *hwnd, void *lParam)')
+    const EnumChildProc = koffi.proto('bool __stdcall VellumEnumChildProc(void *hwnd, void *lParam)')
     const EnumChildProcPtr = koffi.pointer(EnumChildProc)
     const EnumChildWindows = user32.func('__stdcall', 'EnumChildWindows', 'bool', [
       'void *',

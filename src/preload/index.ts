@@ -23,6 +23,6 @@ const api = {
   }
 }
 
-export type InkwellApi = typeof api
+export type VellumApi = typeof api
 
-contextBridge.exposeInMainWorld('inkwell', api)
+contextBridge.exposeInMainWorld('vellum', api)

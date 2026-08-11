@@ -1,5 +1,5 @@
 {
-  "name": "inkwell",
+  "name": "vellum",
   "version": "0.1.0",
   "description": "A drawing and painting application",
   "main": "./out/main/index.js",

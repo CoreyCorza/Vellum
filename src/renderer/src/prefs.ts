@@ -12,7 +12,7 @@ export interface Prefs {
   cursorStyle: CursorStyle
 }
 
-const KEY = 'inkwell.prefs'
+const KEY = 'vellum.prefs'
 
 export const DEFAULT_PREFS: Prefs = {
   cursorStyle: 'brush'

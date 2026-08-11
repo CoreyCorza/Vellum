@@ -144,7 +144,7 @@ export function MenuBar({
 
   return (
     <div id="menubar" ref={barRef}>
-      <span className="menubar-brand">Inkwell</span>
+      <span className="menubar-brand">Vellum</span>
       {menus.map((menu) => (
         <div className="menu-root" key={menu.title}>
           <button

@@ -32,7 +32,7 @@ app.whenReady().then(async () => {
     const touchActions = [...sliders].map(e => getComputedStyle(e).touchAction)
       .filter((v,i,a) => a.indexOf(v) === i);
     return {
-      preloadBridge: Boolean(window.inkwell && window.inkwell.isElectron),
+      preloadBridge: Boolean(window.vellum && window.vellum.isElectron),
       reactMounted: Boolean(root && root.childElementCount > 0),
       canvasPresent: Boolean(stage),
       canvasSized: stage ? stage.width > 0 && stage.height > 0 : false,

@@ -1,4 +1,4 @@
-# Inkwell
+# Vellum
 
 A drawing and painting application. Electron + TypeScript, Canvas 2D now,
 WebGPU later if measurement says so.

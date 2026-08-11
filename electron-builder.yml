@@ -1,5 +1,5 @@
-appId: dev.crz.inkwell
-productName: Inkwell
+appId: dev.crz.vellum
+productName: Vellum
 directories:
   output: release
   buildResources: build
