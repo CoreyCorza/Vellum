@@ -35,11 +35,17 @@ in vec2 aUnit;
 uniform vec2 uCentre;
 uniform float uRadius;
 uniform vec2 uView;
-out vec2 vTip;
+out vec2 vOffset;
 out vec2 vPrev;
 void main() {
-  vTip = aUnit;
-  vec2 px = uCentre + (aUnit - 0.5) * (uRadius * 2.0);
+  // A pixel of padding around the dab, for two reasons. A sub-pixel dab drawn
+  // at exactly its own diameter can fall entirely between pixel centres and
+  // rasterise to no fragments at all — that is what made a 1px brush draw a
+  // dashed line. And at any size, the outermost half pixel of the antialiased
+  // rim falls outside a quad that stops at the radius, so it was being clipped.
+  float ext = uRadius + 1.0;
+  vOffset = (aUnit - 0.5) * (ext * 2.0);
+  vec2 px = uCentre + vOffset;
   // Y is flipped on write, so sampling the same document point needs 1 - y.
   vPrev = vec2(px.x / uView.x, 1.0 - px.y / uView.y);
   vec2 clip = (px / uView) * 2.0 - 1.0;
@@ -48,7 +54,6 @@ void main() {
 
 const FRAG_COPY = `#version 300 es
 precision highp float;
-in vec2 vTip;
 in vec2 vPrev;
 uniform sampler2D uSrc;
 out vec4 oCol;
@@ -58,7 +63,7 @@ void main() {
 
 const FRAG_DAB = `#version 300 es
 precision highp float;
-in vec2 vTip;
+in vec2 vOffset;
 in vec2 vPrev;
 uniform sampler2D uPrev;
 uniform float uFlow;
@@ -67,23 +72,27 @@ uniform float uHardness;
 uniform float uRadius;
 out vec4 oCol;
 void main() {
-  // Distance from the dab centre: 0 at the centre, 1 at the rim.
-  float d = length(vTip - 0.5) * 2.0;
-
   // The falloff is evaluated here rather than sampled from a sprite. A sprite
   // has one fixed resolution, so a brush wider than it got a magnified rim
-  // (visibly faceted) and a brush narrower than it got a minified one
-  // (aliased) — and 8-bit sprite alpha banded the ramp on top of that.
-  // Capped just below 1 so smoothstep never sees a zero-width edge.
-  float h = min(uHardness, 0.995);
-  float profile = 1.0 - smoothstep(h, 1.0, d);
+  // (visibly faceted) and a narrower one got it minified — and 8-bit sprite
+  // alpha banded the ramp on top of that.
+  //
+  // Everything below is in document pixels, not fractions of the radius, which
+  // is the only way one expression can serve a 1px brush and a 500px brush.
+  float dPx = length(vOffset);
 
-  // Half a document pixel of coverage at the outer edge, expressed in pixels
-  // rather than as a fraction of the radius, so a 2px brush and a 500px brush
-  // are both antialiased by the same amount — one pixel.
-  float coverage = clamp((1.0 - d) * uRadius + 0.5, 0.0, 1.0);
+  // The rim sits half a pixel outside the nominal radius, so the antialiasing
+  // band has somewhere to live. For a sub-pixel dab that half pixel is most of
+  // the footprint — without it the dab can miss every pixel centre and vanish,
+  // which is what made a 1px brush draw a dashed line.
+  float rimPx = uRadius + 0.5;
 
-  float mskAlpha = profile * coverage;
+  // Hardness sets where the falloff starts; the ramp is never narrower than a
+  // pixel, so the edge is antialiased at every size and every hardness. A
+  // single smoothstep, so nothing here can cancel anything else out.
+  float innerPx = uHardness * uRadius;
+  float rampPx = max(1.0, rimPx - innerPx);
+  float mskAlpha = 1.0 - smoothstep(rimPx - rampPx, rimPx, dPx);
   float dstAlpha = texture(uPrev, vPrev).a;
 
   // Krita, verbatim. The comparison is the whole point: without it a lighter

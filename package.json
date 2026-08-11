@@ -14,16 +14,14 @@
     "typecheck": "tsc --noEmit",
     "start": "electron-vite preview",
     "smoke": "electron scripts/smoke-main.cjs",
-    "verify": "electron scripts/verify-main.cjs",
-    "gestures": "electron scripts/verify-gestures.cjs",
+    "verify": "electron scripts/verify-main.cjs && electron scripts/verify-curves.cjs && electron scripts/verify-curve-slider.cjs && electron scripts/verify-gestures.cjs && electron scripts/verify-flow-opacity.cjs",
     "penprop": "electron scripts/verify-pen-prop.cjs",
     "wintab": "electron scripts/verify-wintab-input.cjs",
     "stabiliser": "electron scripts/measure-stabiliser.cjs",
-    "curves": "electron scripts/verify-curves.cjs",
-    "flowopacity": "electron scripts/verify-flow-opacity.cjs",
     "bench:wintab": "electron scripts/wintab-bench/main.cjs",
     "dist": "npm run build && electron-builder --win --dir",
-    "dist:installer": "npm run build && electron-builder --win"
+    "dist:installer": "npm run build && electron-builder --win",
+    "looks": "electron-vite build && electron scripts/looks.cjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.10",
