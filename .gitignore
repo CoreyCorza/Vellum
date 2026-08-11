@@ -6,5 +6,5 @@ release/
 .DS_Store
 .vite/
 shot*.png
-loops.png
+looks.png
 *.err
