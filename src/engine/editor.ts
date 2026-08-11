@@ -552,8 +552,18 @@ export class Editor {
     // Zoomed out, draw from a mip level instead of the full-resolution canvas:
     // one bilinear tap cannot represent a 4x shrink, and the result is the
     // "viewport looks noisy" complaint. See engine/mipmap.ts.
-    g.imageSmoothingEnabled = camera.scale < 4
-    g.imageSmoothingQuality = 'high'
+    // Zoomed out, draw from a mip level: one bilinear tap cannot represent a 4x
+    // shrink, and the result is thin strokes breaking into dashes. See
+    // engine/mipmap.ts.
+    //
+    // Zoomed IN, filter choice is the opposite problem. 'high' is a soft
+    // multi-tap — right for minification, but magnifying ink with it puts a
+    // visible haze on every edge, so magnification gets plain bilinear and
+    // anything past 250% goes nearest and stays honest about its pixels.
+    // (Raising that to 400% was a mistake: at 307% it replaced a crisp edge
+    // with a hazy one.)
+    g.imageSmoothingEnabled = camera.scale < 2.5
+    g.imageSmoothingQuality = camera.scale < 1 ? 'high' : 'low'
     // Mid-stroke the composite changes every frame, so last frame's levels are
     // stale. Only pays the rebuild when actually zoomed out.
     if (active && camera.scale < 0.5) this.mips.invalidate()

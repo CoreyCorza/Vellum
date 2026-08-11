@@ -122,14 +122,41 @@ const SCRIPT = `(() => {
 /** The viewport, zoomed out. This is a different question from the sheet above:
  *  not "is the dab right" but "does drawing the document smaller than 1:1 keep
  *  the image, or just sample it". */
-const ZOOM = (scale) => `(() => {
+const ZOOM = (scale, cx, cy) => `(() => {
   const ed = window.editor
   ed.camera.scale = ${scale}
-  ed.camera.cx = ed.doc.width / 2
-  ed.camera.cy = ed.doc.height / 2
+  ed.camera.cx = ${cx === undefined ? 'ed.doc.width / 2' : cx}
+  ed.camera.cy = ${cy === undefined ? 'ed.doc.height / 2' : cy}
   ed.camera.rotation = 0
   ed.invalidate()
   return true
+})()`
+
+/** The same crop magnified 3x under each available filter, which is the whole
+ *  question at high zoom: Chrome's 'high' is a soft multi-tap and reads as
+ *  blurry on ink, 'low' is bilinear, and nearest is crisp but blocky. */
+const GRAB_ZOOMIN = `(() => {
+  const s = window.editor.doc.active.surface
+  const SX = 806, SY = 676, SW = 62, SH = 46, Z = 3
+  const c = document.createElement('canvas')
+  c.width = SW * Z * 3 + 40; c.height = SH * Z + 30
+  const g = c.getContext('2d')
+  g.fillStyle = '#f2ece0'; g.fillRect(0, 0, c.width, c.height)
+  const panel = (i, smooth, quality) => {
+    g.save()
+    g.imageSmoothingEnabled = smooth
+    if (quality) g.imageSmoothingQuality = quality
+    g.drawImage(s.canvas, SX, SY, SW, SH, i * (SW * Z + 20), 30, SW * Z, SH * Z)
+    g.restore()
+  }
+  panel(0, true, 'high')
+  panel(1, true, 'low')
+  panel(2, false)
+  g.fillStyle = '#111'; g.font = '13px sans-serif'
+  g.fillText('high', 8, 20)
+  g.fillText('low / bilinear', SW * Z + 28, 20)
+  g.fillText('nearest', 2 * (SW * Z + 20) + 8, 20)
+  return c.toDataURL('image/png')
 })()`
 
 const GRAB_VIEW = `(() => {
@@ -137,6 +164,18 @@ const GRAB_VIEW = `(() => {
   const c = document.createElement('canvas')
   c.width = v.width; c.height = v.height
   c.getContext('2d').drawImage(v, 0, 0)
+  return c.toDataURL('image/png')
+})()`
+
+/** A 1:1 crop of the real viewport, so what is judged is actual screen pixels
+ *  and not a screenshot that some other tool has already resampled. */
+const GRAB_VIEW_CROP = `(() => {
+  const v = document.getElementById('view')
+  const c = document.createElement('canvas')
+  c.width = 640; c.height = 400
+  const g = c.getContext('2d')
+  g.imageSmoothingEnabled = false
+  g.drawImage(v, Math.round(v.width / 2 - 320), Math.round(v.height / 2 - 200), 640, 400, 0, 0, 640, 400)
   return c.toDataURL('image/png')
 })()`
 
@@ -187,6 +226,19 @@ app.whenReady().then(async () => {
   const viewOut = out.replace(/\.png$/, '-zoom.png')
   await fs.writeFile(viewOut, Buffer.from(view.split(',')[1], 'base64'))
 
-  process.stdout.write('RENDERED ' + JSON.stringify({ out, viewOut, info }) + '\n')
+  // The real viewport at 307%, cropped 1:1 -- the case reported as blurry.
+  // Two places, because a hard edge and a soft edge fail differently.
+  for (const [name, cx, cy] of [['hard', 850, 800], ['soft', 1650, 780]]) {
+    await win.webContents.executeJavaScript(ZOOM(3.07, cx, cy))
+    await new Promise((r) => setTimeout(r, 350))
+    const vin = await win.webContents.executeJavaScript(GRAB_VIEW_CROP)
+    await fs.writeFile(out.replace(/\.png$/, `-307-${name}.png`), Buffer.from(vin.split(',')[1], 'base64'))
+  }
+
+  const zin = await win.webContents.executeJavaScript(GRAB_ZOOMIN)
+  const zinOut = out.replace(/\.png$/, '-zoomin.png')
+  await fs.writeFile(zinOut, Buffer.from(zin.split(',')[1], 'base64'))
+
+  process.stdout.write('RENDERED ' + JSON.stringify({ out, viewOut, zinOut, info }) + '\n')
   app.exit(0)
 })
