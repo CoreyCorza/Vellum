@@ -48,6 +48,16 @@ export interface Telemetry {
  * — React reads state through `ui.subscribe` and calls methods here. Nothing in
  * `src/engine` imports React, and nothing in the UI touches pixels directly.
  */
+/**
+ * Zoom band over which the canvas cross-fades from crisp to smooth.
+ *
+ * At 1x the two are identical — nothing is being resampled — so starting the
+ * ramp there costs nothing and means there is no zoom at which the canvas
+ * visibly changes character.
+ */
+const CRISP_UNTIL = 1.0
+const SMOOTH_FROM = 2.0
+
 export class Editor {
   readonly doc: PaintDocument
   readonly camera: Camera
@@ -549,26 +559,45 @@ export class Editor {
       g.fillRect(0, 0, doc.width, doc.height)
     }
 
-    // Zoomed out, draw from a mip level instead of the full-resolution canvas:
-    // one bilinear tap cannot represent a 4x shrink, and the result is the
-    // "viewport looks noisy" complaint. See engine/mipmap.ts.
-    // Zoomed out, draw from a mip level: one bilinear tap cannot represent a 4x
-    // shrink, and the result is thin strokes breaking into dashes. See
-    // engine/mipmap.ts.
-    //
-    // Zoomed IN, filter choice is the opposite problem. 'high' is a soft
-    // multi-tap — right for minification, but magnifying ink with it puts a
-    // visible haze on every edge, so magnification gets plain bilinear and
-    // anything past 250% goes nearest and stays honest about its pixels.
-    // (Raising that to 400% was a mistake: at 307% it replaced a crisp edge
-    // with a hazy one.)
-    g.imageSmoothingEnabled = camera.scale < 2.5
-    g.imageSmoothingQuality = camera.scale < 1 ? 'high' : 'low'
     // Mid-stroke the composite changes every frame, so last frame's levels are
     // stale. Only pays the rebuild when actually zoomed out.
     if (active && camera.scale < 0.5) this.mips.invalidate()
     const lvl = this.mips.levelFor(composed.canvas, camera.scale)
-    g.drawImage(lvl.canvas, 0, 0, lvl.width, lvl.height, 0, 0, doc.width, doc.height)
+    const blit = (): void => {
+      g.drawImage(lvl.canvas, 0, 0, lvl.width, lvl.height, 0, 0, doc.width, doc.height)
+    }
+
+    if (camera.scale <= 1) {
+      // Shrinking. One bilinear tap cannot represent a 4x reduction, which is
+      // what the mip pyramid is for; 'high' is the right filter once the level
+      // is close to the target size. See engine/mipmap.ts.
+      g.imageSmoothingEnabled = true
+      g.imageSmoothingQuality = 'high'
+      blit()
+    } else {
+      // Magnifying. Nearest is crisp but goes blocky; smooth is soft. Both are
+      // wrong somewhere, so instead of snapping between them at a threshold this
+      // cross-fades across the band: two blits of the same image, the smooth one
+      // over the crisp one at partial alpha.
+      //
+      // The snap is the part people notice. Photoshop and Krita both snap around
+      // 200%. Clip Studio ramps instead and it is invisible — you can use it for
+      // years without knowing it happens, which is the whole point.
+      const t = clamp((camera.scale - CRISP_UNTIL) / (SMOOTH_FROM - CRISP_UNTIL), 0, 1)
+      const mix = t * t * (3 - 2 * t)
+      if (mix < 1) {
+        g.imageSmoothingEnabled = false
+        blit()
+      }
+      if (mix > 0) {
+        g.save()
+        g.globalAlpha = mix
+        g.imageSmoothingEnabled = true
+        g.imageSmoothingQuality = 'low'
+        blit()
+        g.restore()
+      }
+    }
 
     g.lineWidth = 1 / camera.scale
     g.strokeStyle = 'rgba(255,255,255,.14)'
