@@ -75,7 +75,11 @@ app.whenReady().then(async () => {
 
     const rows = [0, 0.25, 0.5, 0.75, 1].map(run)
     // brush radius is 3, so ink legitimately sits up to ~3px off the centre line
-    const BRUSH_SLOP = 3.5
+    // Radius 3, plus the antialiasing band. The dab's rim sits half a pixel
+    // outside the nominal radius and ramps over a pixel, so ink legitimately
+    // reaches ~radius + 0.7: measured 3.68 here against 3.37 with the old
+    // sprite mask, which clipped its own edge (and inked 15% fewer pixels).
+    const BRUSH_SLOP = 4.0
     const monotonic = rows.every((r, i) =>
       i === 0 || r.maxDeviationFromPolyline >= rows[i - 1].maxDeviationFromPolyline - 0.01)
     return {
