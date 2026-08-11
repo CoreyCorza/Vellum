@@ -52,20 +52,21 @@ export interface Telemetry {
 }
 
 /**
+ * Zoom band over which a magnified canvas cross-fades from SMOOTH to CRISP.
+ *
+ * Smooth at and just above 1:1, exact pixels from CRISP_FROM up. That is the
+ * direction Photoshop, Krita and Clip Studio all go; the first two snap at
+ * roughly 200%, Clip Studio ramps. At 1x the two filters agree anyway, since
+ * nothing is being resampled, so the ramp can start there for free.
+ */
+const SMOOTH_UNTIL = 1.0
+const CRISP_FROM = 2.0
+
+/**
  * Owns the document and drives the frame loop. This is the seam the UI talks to
  * — React reads state through `ui.subscribe` and calls methods here. Nothing in
  * `src/engine` imports React, and nothing in the UI touches pixels directly.
  */
-/**
- * Zoom band over which the canvas cross-fades from crisp to smooth.
- *
- * At 1x the two are identical — nothing is being resampled — so starting the
- * ramp there costs nothing and means there is no zoom at which the canvas
- * visibly changes character.
- */
-const CRISP_UNTIL = 1.0
-const SMOOTH_FROM = 2.0
-
 export class Editor {
   readonly doc: PaintDocument
   readonly camera: Camera
@@ -134,6 +135,8 @@ export class Editor {
    * just does it. Its canvas holds the already-resolved stroke, so committing is
    * still a single drawImage into the layer.
    */
+  private glStroke: GLStrokeRenderer
+
   /** Shared by the zoomed-out viewport and, later, the navigator thumbnail. */
   private mips = new MipPyramid()
 
@@ -143,7 +146,6 @@ export class Editor {
     this.mips.invalidate()
   }
 
-  private glStroke: GLStrokeRenderer
   /** Pre-stroke copy of the active layer, so undo can read back just the rect
    *  the stroke actually touched without a CPU snapshot up front. */
   private backup: Surface
@@ -595,23 +597,29 @@ export class Editor {
       g.imageSmoothingQuality = 'low'
       blit()
     } else {
-      // 'auto', magnifying. Nearest is crisp but goes blocky; smooth is soft.
-      // Both are wrong somewhere, so rather than snap between them at a
-      // threshold this cross-fades across the band: two blits of the same image,
-      // the smooth one over the crisp one at partial alpha.
+      // 'auto', magnifying. The direction here matters and is easy to get
+      // backwards, so, measured in Photoshop, Krita and Clip Studio:
       //
-      // The snap is the part people notice. Photoshop and Krita both snap around
-      // 200%. Clip Studio ramps instead and it is invisible — you can use it for
-      // years without knowing it happens, which is the whole point.
-      const t = clamp((camera.scale - CRISP_UNTIL) / (SMOOTH_FROM - CRISP_UNTIL), 0, 1)
-      const mix = t * t * (3 - 2 * t)
-      if (mix < 1) {
+      //   smoothing is ON just above 100% and OFF by about 200%.
+      //
+      // Which is right. A little past 1:1 nearest is ugly for a different reason
+      // than blockiness — a doc pixel covering 1.5 screen pixels gets doubled
+      // unevenly, so line weight visibly wobbles. Past 2x there is enough room
+      // that exact pixels read as deliberate and smoothing just adds haze.
+      //
+      // Photoshop and Krita snap at that point; Clip Studio ramps and you can
+      // use it for years without noticing, so this ramps: two blits of the same
+      // image, the smooth one over the crisp one, its alpha falling to zero as
+      // the zoom reaches CRISP_FROM.
+      const t = clamp((camera.scale - SMOOTH_UNTIL) / (CRISP_FROM - SMOOTH_UNTIL), 0, 1)
+      const smoothMix = 1 - t * t * (3 - 2 * t)
+      if (smoothMix < 1) {
         g.imageSmoothingEnabled = false
         blit()
       }
-      if (mix > 0) {
+      if (smoothMix > 0) {
         g.save()
-        g.globalAlpha = mix
+        g.globalAlpha = smoothMix
         g.imageSmoothingEnabled = true
         g.imageSmoothingQuality = 'low'
         blit()
