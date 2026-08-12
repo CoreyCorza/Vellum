@@ -604,7 +604,7 @@ export class Editor {
 
   captureHover(p: StrokePoint): void {
     if (!this.hoverCapture) return
-    if (!this.recorder.recording) this.recorder.begin(p, this.camera.scale)
+    if (!this.recorder.recording) this.recorder.begin(p, this.camera.scale, this.camera.cx, this.camera.cy)
     else this.recorder.extend(p)
     this.onProfileSample?.(p, 'move')
   }
@@ -618,7 +618,7 @@ export class Editor {
 
   beginStroke(p: StrokePoint, erasing: boolean): void {
     if (this.profiling) {
-      this.recorder.begin(p, this.camera.scale)
+      this.recorder.begin(p, this.camera.scale, this.camera.cx, this.camera.cy)
       this.onProfileSample?.(p, 'down')
       return
     }

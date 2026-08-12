@@ -155,7 +155,7 @@ app.whenReady().then(async () => {
   ok('entering installs the trail', R.hookOnEntry === true, 'no trail hook')
   ok('the stage lets the pen reach the canvas', R.penReachesCanvas === true,
     'hit-testing found something else')
-  ok('the tests are all listed', R.testCount === 11, R.testCount + ' tests')
+  ok('the tests are all listed', R.testCount === 12, R.testCount + ' tests')
   ok('picking a test selects it', String(R.selectedAfterClick).indexOf('Horizontal') >= 0,
     'selected ' + R.selectedAfterClick)
   ok('picking a test keeps the pen taken over', R.profilingAfterPick === true, 'not profiling')

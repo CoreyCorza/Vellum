@@ -62,6 +62,12 @@ const TESTS: Test[] = [
     contact: true,
     held: true
   },
+  {
+    id: 'repeat',
+    label: 'Same line, four times',
+    how: 'Leave the ruler exactly where it is and draw the same slow horizontal pass four or five times, one recording each, without moving the ruler between them. This is the one that decides whether the ripple sits at fixed places on the glass or is made by the movement — and that decides whether it can be cancelled with no lag at all.',
+    contact: true
+  },
   { id: 'free', label: 'Anything else', how: 'Whatever you want to measure.', contact: true }
 ]
 

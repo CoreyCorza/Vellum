@@ -27,6 +27,17 @@ export interface Capture {
   startedAt: number
   /** Camera zoom while recording. Document pixels are screen pixels at 1. */
   viewScale: number
+  /**
+   * Where the canvas was panned to, so a document position can be turned back into a screen
+   * position — and therefore into a position on the glass.
+   *
+   * Needed to compare two sessions. An error fixed to one spot on the tablet appears at a
+   * different document coordinate after any pan, so without this a ripple that never moved
+   * looks like one that did, and the question of whether it is fixed to the hardware cannot
+   * be answered at all.
+   */
+  viewX: number
+  viewY: number
   devicePixelRatio: number
   /** Which input path fed the engine, since they have different resolutions. */
   source: 'wintab' | 'pointer' | 'synthetic'
@@ -93,12 +104,14 @@ export class StrokeRecorder {
     return this.strokes.length ? this.strokes[this.strokes.length - 1] : null
   }
 
-  begin(p: StrokePoint, viewScale: number): void {
+  begin(p: StrokePoint, viewScale: number, viewX = 0, viewY = 0): void {
     this.current = {
       version: 1,
       label: this.label,
       startedAt: Date.now(),
       viewScale,
+      viewX,
+      viewY,
       devicePixelRatio: this.devicePixelRatio,
       source: this.source,
       raw: [sample(p)],

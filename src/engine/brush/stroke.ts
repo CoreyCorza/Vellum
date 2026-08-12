@@ -126,7 +126,7 @@ export class StrokeEngine {
     this.sp = p.pressure
     this.bounds.reset()
     this.spikesRejected = 0
-    this.recorder.begin(p, this.viewScale)
+    this.recorder.begin(p, this.viewScale, 0, 0)
     this.pushStabilised(p, true)
   }
 
