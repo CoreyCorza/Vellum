@@ -8,6 +8,7 @@ export function Stage({ mods }: { mods: Modifiers }): JSX.Element {
   const editor = useEditor()
   const stageRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const overlayRef = useRef<HTMLCanvasElement>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -15,6 +16,7 @@ export function Stage({ mods }: { mods: Modifiers }): JSX.Element {
     if (!canvas || !stage) return
 
     editor.attach(canvas)
+    if (overlayRef.current) editor.attachOverlay(overlayRef.current)
 
     const ro = new ResizeObserver(() => {
       const r = stage.getBoundingClientRect()
@@ -74,6 +76,10 @@ export function Stage({ mods }: { mods: Modifiers }): JSX.Element {
   return (
     <div id="stage" ref={stageRef}>
       <canvas id="view" ref={canvasRef} />
+      {/* Stacked above the floating panels, so the size ring is not hidden behind
+          whichever panel holds the slider being dragged. Never takes a pointer
+          event, so it cannot intercept a stroke. */}
+      <canvas id="overlay" ref={overlayRef} />
     </div>
   )
 }

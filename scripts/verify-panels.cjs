@@ -105,6 +105,39 @@ const SCRIPT = `(async () => {
   panelSize.dispatchEvent(new PointerEvent('pointerup', { pointerId: 22, clientX: pr.left + pr.width * 0.4, clientY: pr.top + pr.height / 2, bubbles: true }))
   await sleep(100)
 
+  // The ring is drawn on its own canvas above the panels. Drawn into the main one
+  // it appeared BEHIND whichever panel held the slider being dragged — exactly
+  // where you are looking — and it printed a second copy of a number the slider was
+  // already showing.
+  const ov = document.querySelector('#overlay')
+  R.overlayExists = !!ov
+  R.overlayAbovePanels = ov ? Number(getComputedStyle(ov).zIndex) > 1000 : false
+  R.overlayIgnoresPointer = ov ? getComputedStyle(ov).pointerEvents === 'none' : false
+
+  ed.setBrush({ size: 240 })
+  ed.showSizePreview(400, 300)
+  await sleep(220)
+  R.sliderRingHasNoLabel = ed.sizePreview.label === false
+  if (ov) {
+    const px = ov.getContext('2d').getImageData(0, 0, ov.width, ov.height).data
+    let painted = 0
+    for (let i = 3; i < px.length; i += 4 * 97) if (px[i] > 8) painted++
+    R.ringPaintsOnOverlay = painted > 20
+  }
+  ed.hideSizePreview()
+  await sleep(200)
+  if (ov) {
+    const px = ov.getContext('2d').getImageData(0, 0, ov.width, ov.height).data
+    let painted = 0
+    for (let i = 3; i < px.length; i += 4 * 97) if (px[i] > 8) painted++
+    R.overlayClearsWhenDone = painted === 0
+  }
+
+  // The Alt+RMB scrub keeps its label: there may be no panel open to show one.
+  ed.beginSizeScrub(300, 300, 'keys')
+  R.scrubKeepsItsLabel = ed.sizePreview.label === true
+  ed.endSizeScrub('keys')
+
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R
 })()`

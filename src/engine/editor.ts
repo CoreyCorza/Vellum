@@ -313,6 +313,17 @@ export class Editor {
 
   private display: HTMLCanvasElement | null = null
   private dsp: CanvasRenderingContext2D | null = null
+  /**
+   * A transparent canvas stacked above the floating panels.
+   *
+   * The size ring was drawn into the main canvas, which sits UNDER the panels — so
+   * the ring appeared behind whichever panel held the slider being dragged, which is
+   * exactly where you are looking. It has to be drawn above everything, and it has
+   * to be a canvas rather than a styled div so it can keep using the brush's real
+   * tip sprite instead of a CSS gradient that would drift from it.
+   */
+  private overlay: HTMLCanvasElement | null = null
+  private ovl: CanvasRenderingContext2D | null = null
   private dpr = 1
   private needsRender = true
   private rafId = 0
@@ -335,7 +346,12 @@ export class Editor {
   }
   /** Anchor for the size-scrub preview. While active it replaces the cursor
    *  ring, so the brush grows concentrically instead of chasing the pen. */
-  sizePreview = { active: false, x: 0, y: 0 }
+  /**
+   * `label` is false when a slider opened the ring: that slider is already showing
+   * the number, right where the pointer is, and two readouts for one value is
+   * clutter. The Alt+RMB scrub keeps it, because there may be no panel open at all.
+   */
+  sizePreview = { active: false, x: 0, y: 0, label: true }
   private scrub: { originX: number; startSize: number; source: ScrubSource } | null = null
 
   private frameCount = 0
@@ -380,10 +396,27 @@ export class Editor {
     this.rafId = requestAnimationFrame(loop)
   }
 
+  attachOverlay(canvas: HTMLCanvasElement): void {
+    this.overlay = canvas
+    this.ovl = canvas.getContext('2d')
+    this.sizeOverlay()
+  }
+
   detach(): void {
     cancelAnimationFrame(this.rafId)
     this.display = null
     this.dsp = null
+    this.overlay = null
+    this.ovl = null
+  }
+
+  private sizeOverlay(): void {
+    const o = this.overlay
+    if (!o) return
+    o.width = Math.max(1, Math.round(this.camera.vw * this.dpr))
+    o.height = Math.max(1, Math.round(this.camera.vh * this.dpr))
+    o.style.width = `${this.camera.vw}px`
+    o.style.height = `${this.camera.vh}px`
   }
 
   resize(cssW: number, cssH: number, dpr: number): void {
@@ -392,6 +425,7 @@ export class Editor {
     this.camera.setViewport(cssW, cssH)
     this.display.width = Math.max(1, Math.round(cssW * this.dpr))
     this.display.height = Math.max(1, Math.round(cssH * this.dpr))
+    this.sizeOverlay()
     this.display.style.width = `${cssW}px`
     this.display.style.height = `${cssH}px`
     this.invalidate()
@@ -418,17 +452,6 @@ export class Editor {
   }
 
   /**
-   * Two bindings drive this, and they must not fight each other:
-   *   'pointer' — alt + right-drag, ended by pointerup
-   *   'keys'    — hold S and move the pen, ended by keyup
-   *
-   * The second exists because a pen barrel button mapped to right-click makes
-   * Windows Ink draw its own ring under the nib, which no application can
-   * suppress. Holding a key and moving — in contact or just hovering — never
-   * produces a right-click, so the ring never appears. It is also the binding
-   * to use if you map a pen button to a keystroke in the tablet driver.
-   */
-  /**
    * Show the size ring without arming a scrub.
    *
    * Dragging a size slider changes a number, and a number in pixels is not
@@ -443,6 +466,7 @@ export class Editor {
     // working on, so the ring appears in context rather than over a panel.
     const seen = this.cursor.x > -9000 && this.cursor.y > -9000
     this.sizePreview.active = true
+    this.sizePreview.label = false
     this.sizePreview.x = x ?? (seen ? this.cursor.x : this.camera.vw / 2)
     this.sizePreview.y = y ?? (seen ? this.cursor.y : this.camera.vh / 2)
     this.invalidate()
@@ -454,7 +478,19 @@ export class Editor {
     this.invalidate()
   }
 
+  /**
+   * Two bindings drive this, and they must not fight each other:
+   *   'pointer' — alt + right-drag, ended by pointerup
+   *   'keys'    — hold S and move the pen, ended by keyup
+   *
+   * The second exists because a pen barrel button mapped to right-click makes
+   * Windows Ink draw its own ring under the nib, which no application can
+   * suppress. Holding a key and moving — in contact or just hovering — never
+   * produces a right-click, so the ring never appears. It is also the binding
+   * to use if you map a pen button to a keystroke in the tablet driver.
+   */
   beginSizeScrub(x: number, y: number, source: ScrubSource): void {
+    this.sizePreview.label = true
     if (this.scrub) return
     this.scrub = { originX: x, startSize: this.brush.size, source }
     this.sizePreview.active = true
@@ -838,13 +874,14 @@ export class Editor {
 
     this.drawSymmetryGuides(g)
 
-    // Cursor ring in screen space, so it stays crisp at any zoom.
+    // Cursor ring in screen space, so it stays crisp at any zoom. The size ring is
+    // NOT drawn here — it goes on the overlay, above the panels.
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
-    if (this.sizePreview.active) {
-      this.drawSizePreview(g)
-    } else if (this.cursor.visible && this.tool !== 'picker') {
+    if (!this.sizePreview.active && this.cursor.visible && this.tool !== 'picker') {
       this.drawCursor(g)
     }
+
+    this.renderOverlay()
   }
 
   /**
@@ -920,12 +957,13 @@ export class Editor {
     const { x, y } = this.sizePreview
     const r = Math.max(1, this.brush.size * 0.5 * this.camera.scale)
 
+    // The brush's real tip, so the ring shows softness as well as size.
     g.save()
     g.globalAlpha = 0.85
-    const sprite = this.strokes.previewSprite()
-    g.drawImage(sprite.canvas, x - r, y - r, r * 2, r * 2)
+    g.drawImage(this.strokes.previewSprite().canvas, x - r, y - r, r * 2, r * 2)
     g.restore()
 
+    // Twice, dark then light: one colour vanishes against paper of the same tone.
     g.beginPath()
     g.arc(x, y, r, 0, Math.PI * 2)
     g.strokeStyle = 'rgba(0,0,0,.6)'
@@ -934,6 +972,10 @@ export class Editor {
     g.strokeStyle = 'rgba(255,255,255,.9)'
     g.lineWidth = 1
     g.stroke()
+
+    // A slider opened this, and that slider is already showing the number right
+    // under the pointer. Two readouts for one value is clutter.
+    if (!this.sizePreview.label) return
 
     const size = this.brush.size
     const label = `${size < 10 ? size.toFixed(1) : Math.round(size)} px`
@@ -953,6 +995,24 @@ export class Editor {
     g.fillStyle = '#e6e9ec'
     g.fillText(label, x, ly)
   }
+
+  /**
+   * The overlay pass: everything that must appear ABOVE the floating panels.
+   *
+   * Only the size ring, for now. Cleared every frame it is not needed, which is
+   * cheap on a canvas this size and means nothing can be left behind.
+   */
+  private renderOverlay(): void {
+    const g = this.ovl
+    const o = this.overlay
+    if (!g || !o) return
+    g.setTransform(1, 0, 0, 1, 0, 0)
+    g.clearRect(0, 0, o.width, o.height)
+    if (!this.sizePreview.active) return
+    g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
+    this.drawSizePreview(g)
+  }
+
 
   private drawSymmetryGuides(g: CanvasRenderingContext2D): void {
     const m = this.brush.symmetry

@@ -1486,3 +1486,16 @@ button.btn[aria-pressed='true'] {
   flex: none;
   color: var(--accent);
 }
+
+/* The overlay canvas: above every floating panel, never touchable.
+   The size ring was drawn into #view, which panels sit on top of, so it appeared
+   behind whichever panel held the slider being dragged — precisely where the eye
+   was. z-index has to clear the panels, which climb as they are brought forward. */
+#overlay {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  pointer-events: none;
+  z-index: 9000;
+}
