@@ -4,6 +4,7 @@ import {
   type CanvasScalingMode,
   type CursorStyle
 } from '@engine/types'
+import { DEFAULT_BRUSH, type BrushSettings } from '@engine/brush/settings'
 
 /**
  * App-wide preferences.
@@ -16,13 +17,46 @@ import {
 export interface Prefs {
   cursorStyle: CursorStyle
   canvasScalingMode: CanvasScalingMode
+  /** The eraser's own preset. Independent of the brush, so it has to be stored. */
+  eraserBrush: BrushSettings
 }
 
 const KEY = 'vellum.prefs'
 
+/**
+ * Take a stored value only where it matches the shape of a real brush setting.
+ * Stale or hand-edited storage must not be able to feed the dab loop something
+ * the engine has no branch for.
+ */
+function sanitiseBrush(raw: unknown): BrushSettings {
+  const out = { ...DEFAULT_BRUSH } as unknown as Record<string, unknown>
+  if (!raw || typeof raw !== 'object') return out as unknown as BrushSettings
+  const ref = DEFAULT_BRUSH as unknown as Record<string, unknown>
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const want = ref[k]
+    if (want === undefined) continue
+    if (Array.isArray(want)) {
+      const ok =
+        Array.isArray(v) &&
+        v.length >= 2 &&
+        v.every(
+          (pt) =>
+            pt &&
+            typeof (pt as { x: unknown }).x === 'number' &&
+            typeof (pt as { y: unknown }).y === 'number'
+        )
+      if (ok) out[k] = v
+      continue
+    }
+    if (typeof v === typeof want && (typeof v !== 'number' || Number.isFinite(v))) out[k] = v
+  }
+  return out as unknown as BrushSettings
+}
+
 export const DEFAULT_PREFS: Prefs = {
   cursorStyle: 'brush',
-  canvasScalingMode: 'auto'
+  canvasScalingMode: 'auto',
+  eraserBrush: { ...DEFAULT_BRUSH }
 }
 
 export function loadPrefs(): Prefs {
@@ -40,7 +74,8 @@ export function loadPrefs(): Prefs {
         parsed.canvasScalingMode as CanvasScalingMode
       )
         ? (parsed.canvasScalingMode as CanvasScalingMode)
-        : DEFAULT_PREFS.canvasScalingMode
+        : DEFAULT_PREFS.canvasScalingMode,
+      eraserBrush: sanitiseBrush(parsed.eraserBrush)
     }
   } catch {
     return { ...DEFAULT_PREFS }

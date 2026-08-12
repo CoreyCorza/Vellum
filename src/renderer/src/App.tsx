@@ -8,7 +8,7 @@ import { StatusBar } from './components/StatusBar'
 import { MenuBar } from './components/MenuBar'
 import { CanvasBar } from './components/CanvasBar'
 import { SettingsDialog } from './components/SettingsDialog'
-import { loadPrefs } from './prefs'
+import { loadPrefs, savePrefs } from './prefs'
 import { savePng } from './platform'
 import { clamp, type ToolId } from '@engine/types'
 import type { Modifiers } from '@engine/input'
@@ -37,6 +37,24 @@ export function App(): JSX.Element {
     const prefs = loadPrefs()
     editor.setCursorStyle(prefs.cursorStyle)
     editor.setCanvasScalingMode(prefs.canvasScalingMode)
+    editor.restoreEraserBrush(prefs.eraserBrush)
+  }, [editor])
+
+  /**
+   * Persist the eraser preset whenever it changes.
+   *
+   * One subscription rather than a save call in each control: the eraser can be
+   * edited by every slider, checkbox and curve in the panel and by Alt+RMB size
+   * scrubbing, and a control that forgot to save would be occasional silent loss.
+   */
+  useEffect(() => {
+    let last = JSON.stringify(editor.eraserBrush)
+    return editor.ui.subscribe(() => {
+      const now = JSON.stringify(editor.eraserBrush)
+      if (now === last) return
+      last = now
+      savePrefs({ eraserBrush: editor.eraserBrush })
+    })
   }, [editor])
 
   const onExport = async (): Promise<void> => {

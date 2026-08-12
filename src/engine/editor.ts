@@ -85,7 +85,43 @@ export class Editor {
    */
   readonly nav = new NavDrag()
 
-  brush: BrushSettings = { ...DEFAULT_BRUSH }
+  /**
+   * One preset per tool. The eraser is just its own brush: same settings, same
+   * panel, its own values. A soft brush and a hard eraser need no explaining,
+   * and understanding any number in the panel never requires knowing where it
+   * came from.
+   */
+  private brushSettings: BrushSettings = { ...DEFAULT_BRUSH }
+  private eraserSettings: BrushSettings = { ...DEFAULT_BRUSH }
+
+  /** The selected tool's settings — what the panel edits and shows. */
+  get brush(): BrushSettings {
+    return this.tool === 'eraser' ? this.eraserSettings : this.brushSettings
+  }
+
+  /** Settings for a STROKE, which is a different question: flipping the pen over
+   *  erases without changing the selected tool. */
+  settingsFor(erasing: boolean): BrushSettings {
+    return erasing ? this.eraserSettings : this.brushSettings
+  }
+
+  /** For persistence. */
+  get eraserBrush(): BrushSettings {
+    return this.eraserSettings
+  }
+
+  /** Restore the saved eraser preset at boot; the caller validates it. Colour
+   *  and symmetry are global, so they are not taken from storage here. */
+  restoreEraserBrush(saved: BrushSettings): void {
+    this.eraserSettings = {
+      ...saved,
+      color: this.brushSettings.color,
+      symmetry: this.brushSettings.symmetry
+    }
+    this.strokes.invalidateTip()
+    this.invalidate()
+    this.ui.emit()
+  }
   tool: ToolId = 'brush'
 
   /**
@@ -197,7 +233,7 @@ export class Editor {
     this.compositor = new Compositor(width, height)
     this.glStroke = new GLStrokeRenderer(width, height)
     this.backup = new Surface(width, height)
-    this.strokes = new StrokeEngine(() => this.brush)
+    this.strokes = new StrokeEngine(() => this.settingsFor(this.strokes.erasing))
     this.checker = makeChecker()
 
     this.history.onChange = () => {
@@ -252,6 +288,9 @@ export class Editor {
 
   setTool(t: ToolId): void {
     this.tool = t
+    // The two presets can differ in hardness, so the cursor's tip is stale.
+    this.strokes.invalidateTip()
+    this.invalidate()
     this.ui.emit()
   }
 
@@ -299,6 +338,20 @@ export class Editor {
 
   setBrush(patch: Partial<BrushSettings>): void {
     Object.assign(this.brush, patch)
+
+    // Colour and symmetry are global, as in Photoshop. An eraser has no colour,
+    // so choosing one while it is selected has to set what you paint with next
+    // rather than disappear into a tool that cannot show it; and symmetry
+    // belongs to the canvas, not to a tool.
+    if (patch.color !== undefined) {
+      this.brushSettings.color = patch.color
+      this.eraserSettings.color = patch.color
+    }
+    if (patch.symmetry !== undefined) {
+      this.brushSettings.symmetry = patch.symmetry
+      this.eraserSettings.symmetry = patch.symmetry
+    }
+
     if (patch.hardness !== undefined || patch.color !== undefined) {
       this.strokes.invalidateTip()
     }
