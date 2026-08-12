@@ -18,7 +18,7 @@ export interface SliderProps {
   defaultValue: number
   format: (v: number) => string
   onChange: (v: number) => void
-  /** For values that are hard to picture from a number — see showSizePreview. */
+  /** For values that are hard to picture from a number — see showBrushPreview. */
   onScrubStart?: () => void
   onScrubEnd?: () => void
 }

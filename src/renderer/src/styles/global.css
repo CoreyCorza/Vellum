@@ -1429,7 +1429,7 @@ button.btn[aria-pressed='true'] {
   border-radius: 6px;
   background: var(--panel-2);
   overflow: visible;
-  cursor: ns-resize;
+  cursor: default;
   touch-action: none;
   outline: none;
 }

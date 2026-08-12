@@ -27,7 +27,7 @@ export function RailSlider({
   range: ScrubRange
   format: (v: number) => string
   onChange: (v: number) => void
-  /** For controls whose value is hard to picture — see Editor.showSizePreview. */
+  /** For controls whose value is hard to picture — see Editor.showBrushPreview. */
   onScrubStart?: () => void
   onScrubEnd?: () => void
 }): JSX.Element {

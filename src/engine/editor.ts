@@ -351,7 +351,7 @@ export class Editor {
    * the number, right where the pointer is, and two readouts for one value is
    * clutter. The Alt+RMB scrub keeps it, because there may be no panel open at all.
    */
-  sizePreview = { active: false, x: 0, y: 0, label: true }
+  brushPreview = { active: false, x: 0, y: 0, label: true }
   private scrub: { originX: number; startSize: number; source: ScrubSource } | null = null
 
   private frameCount = 0
@@ -452,29 +452,29 @@ export class Editor {
   }
 
   /**
-   * Show the size ring without arming a scrub.
+   * Show the brush preview without arming a scrub.
    *
-   * Dragging a size slider changes a number, and a number in pixels is not
-   * something anyone can picture — "34" means nothing until you have drawn with
-   * it. The same ring the Alt+RMB scrub draws is the answer, so this shows it while
-   * a slider is being dragged. Defaults to the middle of the viewport, since the
-   * pen is over a panel rather than the canvas.
+   * Dragging a slider changes a number, and neither "34 px" nor "30%" is something
+   * anyone can picture — they mean nothing until you have drawn with them. The
+   * preview is the mark itself: size from the ring, density and edge from the dab.
+   * Both the size and opacity sliders open it, which is why it is not called a size
+   * preview any more.
    */
-  showSizePreview(x?: number, y?: number): void {
+  showBrushPreview(x?: number, y?: number): void {
     // Where you last had the pen, falling back to the middle of the viewport. The
     // last position is the better default: it is the part of the drawing you were
     // working on, so the ring appears in context rather than over a panel.
     const seen = this.cursor.x > -9000 && this.cursor.y > -9000
-    this.sizePreview.active = true
-    this.sizePreview.label = false
-    this.sizePreview.x = x ?? (seen ? this.cursor.x : this.camera.vw / 2)
-    this.sizePreview.y = y ?? (seen ? this.cursor.y : this.camera.vh / 2)
+    this.brushPreview.active = true
+    this.brushPreview.label = false
+    this.brushPreview.x = x ?? (seen ? this.cursor.x : this.camera.vw / 2)
+    this.brushPreview.y = y ?? (seen ? this.cursor.y : this.camera.vh / 2)
     this.invalidate()
   }
 
-  hideSizePreview(): void {
-    if (!this.sizePreview.active) return
-    this.sizePreview.active = false
+  hideBrushPreview(): void {
+    if (!this.brushPreview.active) return
+    this.brushPreview.active = false
     this.invalidate()
   }
 
@@ -490,12 +490,12 @@ export class Editor {
    * to use if you map a pen button to a keystroke in the tablet driver.
    */
   beginSizeScrub(x: number, y: number, source: ScrubSource): void {
-    this.sizePreview.label = true
+    this.brushPreview.label = true
     if (this.scrub) return
     this.scrub = { originX: x, startSize: this.brush.size, source }
-    this.sizePreview.active = true
-    this.sizePreview.x = x
-    this.sizePreview.y = y
+    this.brushPreview.active = true
+    this.brushPreview.x = x
+    this.brushPreview.y = y
     this.invalidate()
   }
 
@@ -511,7 +511,7 @@ export class Editor {
   endSizeScrub(source: ScrubSource): void {
     if (!this.scrub || this.scrub.source !== source) return
     this.scrub = null
-    this.sizePreview.active = false
+    this.brushPreview.active = false
     this.invalidate()
   }
 
@@ -877,7 +877,7 @@ export class Editor {
     // Cursor ring in screen space, so it stays crisp at any zoom. The size ring is
     // NOT drawn here — it goes on the overlay, above the panels.
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
-    if (!this.sizePreview.active && this.cursor.visible && this.tool !== 'picker') {
+    if (!this.brushPreview.active && this.cursor.visible && this.tool !== 'picker') {
       this.drawCursor(g)
     }
 
@@ -953,13 +953,19 @@ export class Editor {
    * the actual hardness falloff and colour. Showing a plain outline would hide
    * exactly the thing you are usually trying to judge — how soft the edge is.
    */
-  private drawSizePreview(g: CanvasRenderingContext2D): void {
-    const { x, y } = this.sizePreview
+  private drawBrushPreview(g: CanvasRenderingContext2D): void {
+    const { x, y } = this.brushPreview
     const r = Math.max(1, this.brush.size * 0.5 * this.camera.scale)
 
-    // The brush's real tip, so the ring shows softness as well as size.
+    // The brush's real tip at the brush's real opacity: the dab shows density and
+    // softness, the ring shows size. One preview answers both sliders, and neither
+    // number has to be pictured from a percentage or a pixel count.
+    //
+    // Drawn at the true opacity rather than a fixed 0.85, so a 10% brush previews
+    // as a 10% mark. At very low values the dab nearly vanishes — which is the
+    // honest answer, and the ring is still there to carry the size.
     g.save()
-    g.globalAlpha = 0.85
+    g.globalAlpha = clamp(this.brush.opacity, 0.02, 1)
     g.drawImage(this.strokes.previewSprite().canvas, x - r, y - r, r * 2, r * 2)
     g.restore()
 
@@ -975,7 +981,7 @@ export class Editor {
 
     // A slider opened this, and that slider is already showing the number right
     // under the pointer. Two readouts for one value is clutter.
-    if (!this.sizePreview.label) return
+    if (!this.brushPreview.label) return
 
     const size = this.brush.size
     const label = `${size < 10 ? size.toFixed(1) : Math.round(size)} px`
@@ -1008,9 +1014,9 @@ export class Editor {
     if (!g || !o) return
     g.setTransform(1, 0, 0, 1, 0, 0)
     g.clearRect(0, 0, o.width, o.height)
-    if (!this.sizePreview.active) return
+    if (!this.brushPreview.active) return
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
-    this.drawSizePreview(g)
+    this.drawBrushPreview(g)
   }
 
 

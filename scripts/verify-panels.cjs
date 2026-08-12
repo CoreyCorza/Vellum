@@ -91,17 +91,17 @@ const SCRIPT = `(async () => {
   // slider shows the ring.
   sl.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 21, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, isPrimary: true, button: 0, pointerType: 'mouse' }))
   await sleep(100)
-  R.railShowsSizeRing = ed.sizePreview.active === true
+  R.railShowsSizeRing = ed.brushPreview.active === true
   sl.dispatchEvent(new PointerEvent('pointerup', { pointerId: 21, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true }))
   await sleep(100)
-  R.ringHidesAfterDrag = ed.sizePreview.active === false
+  R.ringHidesAfterDrag = ed.brushPreview.active === false
 
   const panelSize = [...document.querySelectorAll('.sl')].find((n) => n.getAttribute('aria-label') === 'Size')
   panelSize.setPointerCapture = () => {}
   const pr = panelSize.getBoundingClientRect()
   panelSize.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 22, clientX: pr.left + pr.width * 0.4, clientY: pr.top + pr.height / 2, bubbles: true, isPrimary: true, button: 0, pointerType: 'mouse' }))
   await sleep(100)
-  R.panelSliderShowsSizeRing = ed.sizePreview.active === true
+  R.panelSliderShowsSizeRing = ed.brushPreview.active === true
   panelSize.dispatchEvent(new PointerEvent('pointerup', { pointerId: 22, clientX: pr.left + pr.width * 0.4, clientY: pr.top + pr.height / 2, bubbles: true }))
   await sleep(100)
 
@@ -115,16 +115,16 @@ const SCRIPT = `(async () => {
   R.overlayIgnoresPointer = ov ? getComputedStyle(ov).pointerEvents === 'none' : false
 
   ed.setBrush({ size: 240 })
-  ed.showSizePreview(400, 300)
+  ed.showBrushPreview(400, 300)
   await sleep(220)
-  R.sliderRingHasNoLabel = ed.sizePreview.label === false
+  R.sliderRingHasNoLabel = ed.brushPreview.label === false
   if (ov) {
     const px = ov.getContext('2d').getImageData(0, 0, ov.width, ov.height).data
     let painted = 0
     for (let i = 3; i < px.length; i += 4 * 97) if (px[i] > 8) painted++
     R.ringPaintsOnOverlay = painted > 20
   }
-  ed.hideSizePreview()
+  ed.hideBrushPreview()
   await sleep(200)
   if (ov) {
     const px = ov.getContext('2d').getImageData(0, 0, ov.width, ov.height).data
@@ -135,8 +135,38 @@ const SCRIPT = `(async () => {
 
   // The Alt+RMB scrub keeps its label: there may be no panel open to show one.
   ed.beginSizeScrub(300, 300, 'keys')
-  R.scrubKeepsItsLabel = ed.sizePreview.label === true
+  R.scrubKeepsItsLabel = ed.brushPreview.label === true
   ed.endSizeScrub('keys')
+
+  // The dab is drawn at the brush's real opacity, so the preview answers the
+  // opacity slider as well as the size one. Sampled rather than trusted: a fixed
+  // alpha would look plausible and say nothing.
+  const g2 = ov && ov.getContext('2d')
+  const dpr = Math.min(window.devicePixelRatio, 2)
+  const centreAlpha = async (op) => {
+    ed.setBrush({ size: 220, hardness: 0.9, opacity: op })
+    ed.showBrushPreview(500, 320)
+    await sleep(220)
+    return g2.getImageData(Math.round(500 * dpr), Math.round(320 * dpr), 1, 1).data[3]
+  }
+  const a10 = await centreAlpha(0.1)
+  const a50 = await centreAlpha(0.5)
+  const a100 = await centreAlpha(1)
+  R.dabTracksOpacity = a10 < a50 && a50 < a100
+  R.dabAlphaIsAccurate = Math.abs(a10 - 26) < 12 && Math.abs(a50 - 128) < 14 && a100 > 240
+  ed.hideBrushPreview()
+  await sleep(150)
+
+  // and the opacity slider opens it, not just the size one
+  const opacityRail = [...document.querySelectorAll('.railsl')][1]
+  opacityRail.setPointerCapture = () => {}
+  const orr = opacityRail.getBoundingClientRect()
+  opacityRail.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 31, clientX: orr.left + orr.width / 2, clientY: orr.top + orr.height * 0.4, bubbles: true, isPrimary: true, button: 0, pointerType: 'mouse' }))
+  await sleep(130)
+  R.opacitySliderOpensPreview = ed.brushPreview.active === true
+  opacityRail.dispatchEvent(new PointerEvent('pointerup', { pointerId: 31, clientX: orr.left + orr.width / 2, clientY: orr.top + orr.height * 0.4, bubbles: true }))
+  await sleep(130)
+  R.previewClosesAfterOpacityDrag = ed.brushPreview.active === false
 
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R

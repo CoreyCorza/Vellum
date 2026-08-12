@@ -52,8 +52,8 @@ app.whenReady().then(async () => {
     key('keydown', 'AltLeft', { altKey: true });
     ev('pointerdown', { button: 2, buttons: 2, altKey: true,
                         clientX: box.left + 400, clientY: box.top + 300 });
-    R.previewShownOnDown = ed.sizePreview.active;
-    R.previewAnchor = { x: Math.round(ed.sizePreview.x), y: Math.round(ed.sizePreview.y) };
+    R.previewShownOnDown = ed.brushPreview.active;
+    R.previewAnchor = { x: Math.round(ed.brushPreview.x), y: Math.round(ed.brushPreview.y) };
 
     ev('pointerrawupdate', { buttons: 2, altKey: true,
                              clientX: box.left + 450, clientY: box.top + 300 });
@@ -79,8 +79,8 @@ app.whenReady().then(async () => {
       rightGrows: near(after50Right, 40 * Math.exp(0.5)),
       leftShrinks: near(after100Left, 40 * Math.exp(-1)),
       verticalIgnored: afterVertical === after100Left,
-      previewHiddenOnUp: ed.sizePreview.active === false,
-      anchoredWhereDragBegan: Math.round(ed.sizePreview.x) === 400
+      previewHiddenOnUp: ed.brushPreview.active === false,
+      anchoredWhereDragBegan: Math.round(ed.brushPreview.x) === 400
     };
 
     // The mapping must be ZOOM-INDEPENDENT — the same drag gives the same size
@@ -197,7 +197,7 @@ app.whenReady().then(async () => {
     ev('pointerrawupdate', { buttons: 0, clientX: box.left + 400, clientY: box.top + 300 });
     key('keydown', 'KeyS', { key: 's' });
     const armed = ed.sizeScrubActive;
-    const previewAt = { x: Math.round(ed.sizePreview.x), y: Math.round(ed.sizePreview.y) };
+    const previewAt = { x: Math.round(ed.brushPreview.x), y: Math.round(ed.brushPreview.y) };
     // hover-move right with NO button down
     ev('pointerrawupdate', { buttons: 0, clientX: box.left + 500, clientY: box.top + 300 });
     const hoverResized = ed.brush.size;

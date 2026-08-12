@@ -61,16 +61,20 @@ export function BrushPanel(): JSX.Element {
           label="Size" value={b.size} min={1} max={400} gamma={2.4} step={0.1} defaultValue={34}
           format={(v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} px`}
           onChange={(v) => editor.setBrush({ size: v })}
-          onScrubStart={() => editor.showSizePreview()}
-          onScrubEnd={() => editor.hideSizePreview()}
+          onScrubStart={() => editor.showBrushPreview()}
+          onScrubEnd={() => editor.hideBrushPreview()}
         />
         <Slider
           label="Hardness" value={b.hardness * 100} min={0} max={100} step={1} defaultValue={55}
           format={pct} onChange={(v) => editor.setBrush({ hardness: v / 100 })}
+          onScrubStart={() => editor.showBrushPreview()}
+          onScrubEnd={() => editor.hideBrushPreview()}
         />
         <Slider
           label="Opacity" value={b.opacity * 100} min={1} max={100} step={1} defaultValue={100}
           format={pct} onChange={(v) => editor.setBrush({ opacity: v / 100 })}
+          onScrubStart={() => editor.showBrushPreview()}
+          onScrubEnd={() => editor.hideBrushPreview()}
         />
         <Slider
           label="Flow" value={b.flow * 100} min={1} max={100} gamma={1.7} step={1} defaultValue={55}

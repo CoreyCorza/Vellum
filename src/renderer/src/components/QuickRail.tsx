@@ -34,8 +34,8 @@ export function QuickRail(): JSX.Element {
           range={{ min: 1, max: 400, gamma: 2.4, step: 0.1 }}
           format={(v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} px`}
           onChange={(size) => editor.setBrush({ size })}
-          onScrubStart={() => editor.showSizePreview()}
-          onScrubEnd={() => editor.hideSizePreview()}
+          onScrubStart={() => editor.showBrushPreview()}
+          onScrubEnd={() => editor.hideBrushPreview()}
         />
 
         {/* Procreate's square between the sliders opens its colour picker, so this
@@ -67,6 +67,8 @@ export function QuickRail(): JSX.Element {
           range={{ min: 1, max: 100, step: 1 }}
           format={(v) => `${Math.round(v)}%`}
           onChange={(v) => editor.setBrush({ opacity: v / 100 })}
+          onScrubStart={() => editor.showBrushPreview()}
+          onScrubEnd={() => editor.hideBrushPreview()}
         />
 
         <div className="quickrail-foot">
