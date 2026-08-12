@@ -82,3 +82,18 @@ export function Chevron(): JSX.Element {
     </svg>
   )
 }
+
+/** Says "options for this panel", as distinct from a chevron's "opens downwards". */
+export function Hamburger(): JSX.Element {
+  return (
+    <svg className="chev" width="11" height="9" viewBox="0 0 11 9" aria-hidden="true">
+      <path
+        d="M1 1.5h9M1 4.5h9M1 7.5h9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+      />
+    </svg>
+  )
+}

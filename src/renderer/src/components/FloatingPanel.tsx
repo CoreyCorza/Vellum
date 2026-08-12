@@ -1,4 +1,5 @@
 import { usePanels } from '../panels'
+import { Hamburger, Popover } from './Popover'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   anchorForFloatingPosition,
@@ -42,6 +43,8 @@ export function FloatingPanel({
   id,
   title,
   titleSuffix,
+  hideTitle,
+  menu,
   minWidth,
   initialWidth,
   initialTop,
@@ -54,6 +57,17 @@ export function FloatingPanel({
   /** Shown after the title, dimmer. For "which thing am I editing" — kept
    *  separate so the accessible name and the resize label stay stable. */
   titleSuffix?: ReactNode
+  /** Drop the title text but keep the bar, for a panel narrow enough that a name
+   *  would be the widest thing in it. */
+  hideTitle?: boolean
+  /**
+   * View options for THIS panel — the contents of the header's hamburger.
+   *
+   * Lives here rather than inside each panel's body so it costs no body height and
+   * sits in the same place on every panel: a header is where you look for "how do I
+   * want to see this", and the body is for the thing itself.
+   */
+  menu?: ReactNode
   /** Narrowest the user may drag this panel. Defaults to 180. */
   minWidth?: number
   /** Starting width. Defaults to 220, which suits a panel of labelled rows and is
@@ -70,6 +84,8 @@ export function FloatingPanel({
   // be a poor trade for a shorter component.
   const panels = usePanels()
   const panelRef = useRef<HTMLDivElement>(null)
+  const menuBtn = useRef<HTMLButtonElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
   const drag = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null)
   const resize = useRef<{
     pointerId: number
@@ -205,12 +221,37 @@ export function FloatingPanel({
         }}
       >
         <span>
-          {title}
+          {hideTitle ? '' : title}
           {titleSuffix}
         </span>
-        <i aria-hidden="true" />
+        {menu && (
+          <button
+            className="panel-menu"
+            ref={menuBtn}
+            aria-expanded={menuOpen}
+            aria-label={`${title} view options`}
+            title="View options"
+            // The header drags the panel, so the button has to keep its press.
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => setMenuOpen((o) => !o)}
+          >
+            <Hamburger />
+          </button>
+        )}
       </div>
       <div className="floating-panel-body">{children}</div>
+
+      {menu && menuOpen && (
+        <Popover
+          anchor={menuBtn}
+          placement="below-right"
+          onClose={() => setMenuOpen(false)}
+          className="preset-menu"
+          label={`${title} view options`}
+        >
+          <div onClick={() => setMenuOpen(false)}>{menu}</div>
+        </Popover>
+      )}
       <div
         className="floating-panel-resize"
         title="Resize panel"

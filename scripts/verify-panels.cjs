@@ -191,6 +191,30 @@ const SCRIPT = `(async () => {
   R.labelsShareALeftEdge = alignment.every((a) => a.lefts === 1)
   R.shortcutsShareARightEdge = alignment.every((a) => a.rights <= 1)
 
+  // Panel headers: no decorative dash, view options behind a hamburger, and no
+  // second header inside the body repeating what the panel is called.
+  R.noDecorativeDash = document.querySelectorAll('.floating-panel-head i').length === 0
+  R.shelfHasNoInnerHeader = !document.querySelector('.preset-shelf .sec-head')
+  const railHead = [...document.querySelectorAll('.floating-panel-head')]
+    .find((h) => h.closest('.floating-panel').querySelector('.quickrail'))
+  R.quickRailHasNoTitle = railHead ? railHead.querySelector('span').textContent.trim() === '' : false
+
+  const shelfPanel = document.querySelector('.preset-shelf').closest('.floating-panel')
+  const ham = shelfPanel.querySelector('.panel-menu')
+  R.shelfHasHeaderMenu = !!ham
+  const boxBefore = shelfPanel.getBoundingClientRect()
+  // A press on the header drags the panel, so the button must keep its own press.
+  ham.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 41, clientX: 5, clientY: 5, bubbles: true, isPrimary: true, button: 0 }))
+  ham.click()
+  await sleep(240)
+  const pop = document.querySelector('.popover')
+  R.headerMenuOpens = !!pop
+  R.headerMenuHasViewOptions = pop
+    ? ['List', 'Icons'].every((t) => [...pop.querySelectorAll('button')].some((b) => b.textContent.trim() === t))
+    : false
+  R.openingMenuDoesNotDragPanel =
+    Math.round(shelfPanel.getBoundingClientRect().left) === Math.round(boxBefore.left)
+
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R
 })()`

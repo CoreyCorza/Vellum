@@ -141,16 +141,7 @@ export function BrushPanel(): JSX.Element {
       </div>
       </FloatingPanel>
 
-      <FloatingPanel
-        id="brushes-panel"
-        title="Brushes"
-        initialTop={320}
-        initialRight={484}
-        initialHeight={320}
-        minWidth={96}
-      >
-        <PresetBox />
-      </FloatingPanel>
+      <PresetBox />
 
       <FloatingPanel id="color-panel" title="Colour" initialTop={10} initialRight={240}>
         <ColorPicker

@@ -4,7 +4,8 @@ import { PresetThumbnails } from '@engine/brush/thumbnail'
 import { Slider } from './Slider'
 import { loadPrefs, savePrefs } from '../prefs'
 import type { BrushPreset } from '@engine/brush/presets'
-import { Chevron, Popover } from './Popover'
+import { Hamburger, Popover } from './Popover'
+import { FloatingPanel } from './FloatingPanel'
 
 export type PresetView = 'list' | 'icons'
 
@@ -28,15 +29,12 @@ export function PresetBox(): JSX.Element {
   const stored = useMemo(() => loadPrefs(), [])
   const [view, setView] = useState<PresetView>(stored.presetView)
   const [tile, setTile] = useState(stored.presetTileSize)
-  const [menu, setMenu] = useState(false)
   const [actions, setActions] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [armed, setArmed] = useState(false)
   const [narrow, setNarrow] = useState(false)
-  const headRef = useRef<HTMLDivElement>(null)
   const footRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
-  const headBtn = useRef<HTMLButtonElement>(null)
   const footBtn = useRef<HTMLButtonElement>(null)
 
   // Two shapes, two renderers: a wide strip for the list and a square for the
@@ -67,19 +65,18 @@ export function PresetBox(): JSX.Element {
   }, [])
 
   const closeAll = (): void => {
-    setMenu(false)
     setActions(false)
     setArmed(false)
   }
 
   useEffect(() => {
-    if (!menu && !actions) return
+    if (!actions) return
     const away = (e: PointerEvent): void => {
       const t = e.target as Node
       // The menus live in the document body now, so containment in the panel is no
       // longer the test for "inside".
       if ((t as Element)?.closest?.('.popover')) return
-      if (!headRef.current?.contains(t) && !footRef.current?.contains(t)) closeAll()
+      if (!footRef.current?.contains(t)) closeAll()
     }
     const esc = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') closeAll()
@@ -90,7 +87,7 @@ export function PresetBox(): JSX.Element {
       window.removeEventListener('pointerdown', away, true)
       window.removeEventListener('keydown', esc)
     }
-  }, [menu, actions])
+  }, [actions])
 
   const chooseView = (v: PresetView): void => {
     setView(v)
@@ -190,65 +187,48 @@ export function PresetBox(): JSX.Element {
       </span>
     )
 
-  return (
-    <div className={'preset-shelf' + (narrow ? ' narrow' : '')} ref={rootRef}>
-      <div className="sec-head" ref={headRef}>
-        {!narrow && <h2>{presets.length} brushes</h2>}
-        <button
-          className="sec-menu"
-          ref={headBtn}
-          aria-expanded={menu}
-          title="View, tile size, restore defaults"
-          onClick={() => {
-            setActions(false)
-            setMenu((m) => !m)
-          }}
-        >
-          <Chevron />
+  // View options for the panel header. Passed up rather than drawn here: a row for
+  // them inside the body cost height on a panel whose whole job is showing as many
+  // brushes as it can.
+  const viewOptions = (
+    <>
+      <div className="preset-menu-row">
+        <button className="btn" aria-pressed={view === 'list'} onClick={() => chooseView('list')}>
+          List
         </button>
-        {menu && (
-          <Popover
-            anchor={headBtn}
-            placement="below-right"
-            onClose={closeAll}
-            className="preset-menu"
-            label="Shelf options"
-          >
-            <div className="preset-menu-row">
-              <button
-                className="btn"
-                aria-pressed={view === 'list'}
-                onClick={() => chooseView('list')}
-              >
-                List
-              </button>
-              <button
-                className="btn"
-                aria-pressed={view === 'icons'}
-                onClick={() => chooseView('icons')}
-              >
-                Icons
-              </button>
-            </div>
-            {view === 'icons' && (
-              <Slider
-                label="Tile size"
-                value={tile}
-                min={28}
-                max={96}
-                step={1}
-                defaultValue={48}
-                format={(v) => `${Math.round(v)} px`}
-                onChange={chooseTile}
-              />
-            )}
-            <button className="btn" onClick={restoreDefaults}>
-              Restore default brushes
-            </button>
-          </Popover>
-        )}
+        <button className="btn" aria-pressed={view === 'icons'} onClick={() => chooseView('icons')}>
+          Icons
+        </button>
       </div>
+      {view === 'icons' && (
+        <Slider
+          label="Tile size"
+          value={tile}
+          min={28}
+          max={96}
+          step={1}
+          defaultValue={48}
+          format={(v) => `${Math.round(v)} px`}
+          onChange={chooseTile}
+        />
+      )}
+      <button className="btn" onClick={restoreDefaults}>
+        Restore default brushes
+      </button>
+    </>
+  )
 
+  return (
+    <FloatingPanel
+      id="brushes-panel"
+      title="Brushes"
+      initialTop={320}
+      initialRight={484}
+      initialHeight={320}
+      minWidth={96}
+      menu={viewOptions}
+    >
+    <div className={'preset-shelf' + (narrow ? ' narrow' : '')} ref={rootRef}>
       <div className={`preset-well ${view}`}>
         {view === 'list' ? (
           <div className="preset-rows">
@@ -319,12 +299,11 @@ export function PresetBox(): JSX.Element {
               aria-expanded={actions}
               title="Brush actions"
               onClick={() => {
-                setMenu(false)
                 setArmed(false)
                 setActions((a) => !a)
               }}
             >
-              <Chevron />
+              <Hamburger />
             </button>
             {actions && (
               <Popover
@@ -416,5 +395,6 @@ export function PresetBox(): JSX.Element {
         )}
       </div>
     </div>
+    </FloatingPanel>
   )
 }
