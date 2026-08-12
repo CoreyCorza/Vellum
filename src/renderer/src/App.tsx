@@ -14,6 +14,7 @@ import { QuickRail } from './components/QuickRail'
 import { savePng } from './platform'
 import { clamp, type ToolId } from '@engine/types'
 import type { Modifiers } from '@engine/input'
+import * as diag from '@engine/diag/analysis'
 
 const DOC_WIDTH = 2048
 const DOC_HEIGHT = 1400
@@ -269,6 +270,10 @@ export function App(): JSX.Element {
   useEffect(() => {
     if (import.meta.env.DEV || location.search.includes('debug')) {
       ;(window as unknown as { editor: Editor }).editor = editor
+      // The analysis functions too, so a recorded stroke can be measured from the
+      // console and from the verification scripts without going through the UI.
+      ;(window as unknown as { diag: unknown }).diag = diag
+      editor.recorder.devicePixelRatio = window.devicePixelRatio || 1
     }
   }, [editor])
 

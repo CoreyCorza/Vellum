@@ -103,6 +103,22 @@ app.whenReady().then(() => {
     }
   )
 
+  // Tablet profiler captures. Text rather than an image, and separate from savePng so
+  // neither can be handed the wrong kind of payload.
+  ipcMain.handle(
+    'file:saveText',
+    async (_e, text: string, defaultName: string): Promise<string | null> => {
+      const { canceled, filePath } = await dialog.showSaveDialog({
+        title: 'Save capture',
+        defaultPath: defaultName,
+        filters: [{ name: 'JSON', extensions: ['json'] }]
+      })
+      if (canceled || !filePath) return null
+      await writeFile(filePath, text, 'utf8')
+      return filePath
+    }
+  )
+
   createWindow()
 
   app.on('activate', () => {

@@ -18,6 +18,7 @@ export interface WintabStatus {
 export interface VellumApi {
   isElectron: true
   savePng(bytes: Uint8Array, defaultName: string): Promise<string | null>
+  saveText(text: string, defaultName: string): Promise<string | null>
   wintabStatus(): Promise<WintabStatus>
   wintabSetEnabled(on: boolean): Promise<WintabStatus>
   onWintabSamples(cb: (samples: WintabSample[]) => void): () => void
@@ -76,6 +77,22 @@ export async function savePng(blob: Blob): Promise<string | boolean | null> {
     return api.savePng(bytes, name)
   }
   const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 4000)
+  return true
+}
+
+/**
+ * Save a tablet profiler capture. Same two paths as savePng: a real dialog inside
+ * Electron, a browser download in the web build.
+ */
+export async function saveText(text: string, name: string): Promise<string | boolean | null> {
+  const api = window.vellum
+  if (api?.isElectron) return api.saveText(text, name)
+  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
   const a = document.createElement('a')
   a.href = url
   a.download = name

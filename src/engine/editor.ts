@@ -4,6 +4,7 @@ import { Camera } from './camera'
 import { Compositor } from './compositor'
 import { History, PixelPatch, ActionCommand } from './history'
 import { StrokeEngine } from './brush/stroke'
+import type { StrokeRecorder } from './diag/capture'
 import { NavDrag } from './gestures'
 import { GLStrokeRenderer } from './gl/strokeRenderer'
 import { DEFAULT_BRUSH, type BrushSettings } from './brush/settings'
@@ -246,6 +247,14 @@ export class Editor {
    * needs to know whether the tool was USED while its key was held, which is
    * what separates "hold E to erase a bit" from "tap E to switch to it".
    */
+  /**
+   * Raw pen samples for the last few strokes, kept for measuring the tablet rather than
+   * for drawing. See diag/capture.ts.
+   */
+  get recorder(): StrokeRecorder {
+    return this.strokes.recorder
+  }
+
   strokesCommitted = 0
 
   /**
