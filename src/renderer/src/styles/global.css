@@ -788,11 +788,40 @@ table.kv td:last-child {
   cursor: pointer;
   touch-action: manipulation;
 }
-.chk input {
-  accent-color: var(--accent);
+.chk input[type='checkbox'] {
+  /* Drawn rather than tinted. accent-color only recolours the tick, leaving a white
+     box and system-blue fill that belong to no part of this app. */
+  appearance: none;
+  -webkit-appearance: none;
   width: 13px;
   height: 13px;
   margin: 0;
+  flex: none;
+  border: 1px solid var(--line-2);
+  border-radius: 3px;
+  background: var(--panel-2);
+  background-repeat: no-repeat;
+  background-position: center;
+  cursor: pointer;
+  transition: background-color 80ms linear, border-color 80ms linear;
+}
+.chk:hover input[type='checkbox'] {
+  border-color: #6a6a6a;
+}
+.chk input[type='checkbox']:checked {
+  background-color: var(--button1);
+  border-color: #6f6f6f;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.6 6.4 4.9 8.8 9.4 3.4' fill='none' stroke='white' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+.chk input[type='checkbox']:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chk input[type='checkbox'] {
+    transition: none;
+  }
 }
 .chk:hover {
   color: var(--fg);
@@ -1564,4 +1593,13 @@ button.btn[aria-pressed='true'] {
 }
 .floating-panel:has(.rail-head) .floating-panel-body {
   padding: 2px 5px 5px;
+}
+
+/* A dynamic that is switched off still shows its curve, dimmed. Only the canvas
+   stops taking input — the container keeps hover so its tooltip can explain why. */
+.curve-editor.disabled {
+  opacity: 0.34;
+}
+.curve-editor.disabled canvas {
+  pointer-events: none;
 }

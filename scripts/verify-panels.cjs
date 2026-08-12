@@ -250,6 +250,41 @@ const SCRIPT = `(async () => {
     : false
   R.gripStaysHitTestable = handle ? getComputedStyle(handle).pointerEvents !== 'none' : false
 
+  // Toggling a pen dynamic must not move anything. The curves used to be added and
+  // removed, so every tick shifted the controls below and left a hole at the bottom
+  // of the panel.
+  const settingsBody = document.querySelector('#brush-panel .floating-panel-body')
+  if (settingsBody) {
+    const strokeHead = () =>
+      [...document.querySelectorAll('#brush-panel h2')].find((h) => h.textContent.trim() === 'Stroke')
+    ed.setBrush({ pressureToSize: true, pressureToFlow: true, pressureToOpacity: true })
+    await sleep(240)
+    const onY = Math.round(strokeHead().getBoundingClientRect().top)
+    const onH = settingsBody.scrollHeight
+    const onCurves = document.querySelectorAll('.curve-editor').length
+
+    ed.setBrush({ pressureToSize: false, pressureToFlow: false, pressureToOpacity: false })
+    await sleep(240)
+    R.curvesStayPresent = document.querySelectorAll('.curve-editor').length === onCurves
+    R.curvesDimWhenOff = document.querySelectorAll('.curve-editor.disabled').length === onCurves
+    R.togglingDoesNotShiftLayout =
+      Math.round(strokeHead().getBoundingClientRect().top) === onY && settingsBody.scrollHeight === onH
+
+    const offCanvas = document.querySelector('.curve-editor.disabled canvas')
+    R.disabledCurveIgnoresInput = offCanvas
+      ? getComputedStyle(offCanvas).pointerEvents === 'none'
+      : false
+    ed.setBrush({ pressureToSize: true })
+  }
+
+  // Checkboxes are drawn, not tinted: accent-color leaves a white box and a
+  // system-blue fill that match nothing else here.
+  const box = document.querySelector('.chk input[type=checkbox]')
+  R.checkboxIsThemed = box
+    ? getComputedStyle(box).appearance === 'none' &&
+      getComputedStyle(box).backgroundColor !== 'rgba(0, 0, 0, 0)'
+    : false
+
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R
 })()`

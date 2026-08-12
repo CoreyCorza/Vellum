@@ -27,11 +27,21 @@ export function CurveEditor({
   value,
   onChange,
   /** Which live telemetry value to trace on the curve, if any. */
-  showLivePressure = true
+  showLivePressure = true,
+  /**
+   * Shown but not editable, for a dynamic whose checkbox is off.
+   *
+   * The curve used to be removed from the DOM instead. That kept the panel honest
+   * about what was reachable, and made the whole column jump every time a checkbox
+   * was ticked — with a hole left at the bottom. A dimmed control that stays put is
+   * the better trade in a panel you work in continuously.
+   */
+  disabled = false
 }: {
   value: Curve
   onChange: (next: Curve) => void
   showLivePressure?: boolean
+  disabled?: boolean
 }): JSX.Element {
   const editor = useTelemetry()
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -204,7 +214,10 @@ export function CurveEditor({
   }
 
   return (
-    <div className="curve-editor">
+    <div
+      className={'curve-editor' + (disabled ? ' disabled' : '')}
+      title={disabled ? 'Turn the dynamic on to shape its curve' : undefined}
+    >
       <canvas
         ref={canvasRef}
         style={{ height: HEIGHT }}
@@ -219,6 +232,7 @@ export function CurveEditor({
         <span className="hint">soft ← pressure → hard</span>
         <button
           className="mini"
+          disabled={disabled}
           title="Reset to linear"
           onClick={() => onChange(LINEAR_CURVE.map((p) => ({ ...p })))}
         >

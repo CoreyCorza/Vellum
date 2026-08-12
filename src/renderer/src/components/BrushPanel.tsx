@@ -89,30 +89,29 @@ export function BrushPanel(): JSX.Element {
       <div className="sec">
         <h2>Pen dynamics</h2>
         {check('d-size', 'Pressure → size', 'pressureToSize')}
-        {/* The curve only appears once the dynamic is on — an unreachable
-            control is worse than an absent one. */}
-        {b.pressureToSize && (
-          <CurveEditor
-            value={b.sizeCurve}
-            onChange={(sizeCurve) => editor.setBrush({ sizeCurve })}
-          />
-        )}
+        {/* Curves are always present, dimmed when their dynamic is off. Removing
+            them shifted every control below on each tick and left a hole at the
+            bottom of the panel; a panel you work in continuously should not move
+            under you. */}
+        <CurveEditor
+          value={b.sizeCurve}
+          onChange={(sizeCurve) => editor.setBrush({ sizeCurve })}
+          disabled={!b.pressureToSize}
+        />
 
         {check('d-flow', 'Pressure → flow', 'pressureToFlow')}
-        {b.pressureToFlow && (
-          <CurveEditor
-            value={b.flowCurve}
-            onChange={(flowCurve) => editor.setBrush({ flowCurve })}
-          />
-        )}
+        <CurveEditor
+          value={b.flowCurve}
+          onChange={(flowCurve) => editor.setBrush({ flowCurve })}
+          disabled={!b.pressureToFlow}
+        />
 
         {check('d-opac', 'Pressure → opacity', 'pressureToOpacity')}
-        {b.pressureToOpacity && (
-          <CurveEditor
-            value={b.opacityCurve}
-            onChange={(opacityCurve) => editor.setBrush({ opacityCurve })}
-          />
-        )}
+        <CurveEditor
+          value={b.opacityCurve}
+          onChange={(opacityCurve) => editor.setBrush({ opacityCurve })}
+          disabled={!b.pressureToOpacity}
+        />
 
         <Slider
           label="Min size" value={b.minSize * 100} min={0} max={100} step={1} defaultValue={8}
