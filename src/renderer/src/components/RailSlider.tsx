@@ -18,13 +18,18 @@ export function RailSlider({
   value,
   range,
   format,
-  onChange
+  onChange,
+  onScrubStart,
+  onScrubEnd
 }: {
   label: string
   value: number
   range: ScrubRange
   format: (v: number) => string
   onChange: (v: number) => void
+  /** For controls whose value is hard to picture — see Editor.showSizePreview. */
+  onScrubStart?: () => void
+  onScrubEnd?: () => void
 }): JSX.Element {
   const ref = useRef<HTMLDivElement>(null)
   const drag = useRef<{ rect: DOMRect; startY: number; startPos: number; fine: boolean } | null>(
@@ -52,6 +57,7 @@ export function RailSlider({
     drag.current = { rect, startY: e.clientY, startPos: pos, fine: e.shiftKey }
     setBox(rect)
     setDragging(true)
+    onScrubStart?.()
     // No threshold: the value follows the nib the instant it lands, same as the
     // panel sliders. Shift starts a fine drag from where the value already is.
     if (!e.shiftKey) commit(fromY(e.clientY, rect))
@@ -76,6 +82,7 @@ export function RailSlider({
     drag.current = null
     setDragging(false)
     setBox(null)
+    onScrubEnd?.()
   }
 
   return (
@@ -110,7 +117,10 @@ export function RailSlider({
       }}
     >
       <div className="railsl-fill" style={{ height: `${pos * 100}%` }} />
-      <div className="railsl-thumb" style={{ bottom: `${pos * 100}%` }} />
+      {/* Inset by half its own height at each end. Left on a plain percentage the
+          thumb hangs half outside the track at min and max, and since the track is
+          what receives the press, clicking the visible thumb there did nothing. */}
+      <div className="railsl-thumb" style={{ bottom: `calc(5px + ${pos} * (100% - 10px))` }} />
       {dragging &&
         box &&
         createPortal(

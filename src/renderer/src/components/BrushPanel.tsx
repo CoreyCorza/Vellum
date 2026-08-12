@@ -61,6 +61,8 @@ export function BrushPanel(): JSX.Element {
           label="Size" value={b.size} min={1} max={400} gamma={2.4} step={0.1} defaultValue={34}
           format={(v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} px`}
           onChange={(v) => editor.setBrush({ size: v })}
+          onScrubStart={() => editor.showSizePreview()}
+          onScrubEnd={() => editor.hideSizePreview()}
         />
         <Slider
           label="Hardness" value={b.hardness * 100} min={0} max={100} step={1} defaultValue={55}

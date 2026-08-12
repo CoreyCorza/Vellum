@@ -18,6 +18,9 @@ export interface SliderProps {
   defaultValue: number
   format: (v: number) => string
   onChange: (v: number) => void
+  /** For values that are hard to picture from a number — see showSizePreview. */
+  onScrubStart?: () => void
+  onScrubEnd?: () => void
 }
 
 /**
@@ -40,6 +43,7 @@ export interface SliderProps {
  */
 export function Slider(props: SliderProps): JSX.Element {
   const { label, value, min, max, step, defaultValue, format, onChange } = props
+  const { onScrubStart, onScrubEnd } = props
   const gamma = props.gamma ?? 1
   const trackRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{ rect: DOMRect; startX: number; startPos: number; fine: boolean } | null>(null)
@@ -69,6 +73,7 @@ export function Slider(props: SliderProps): JSX.Element {
     drag.current = { rect, startX: e.clientX, startPos: toPos(value), fine: e.shiftKey }
     setDragging(true)
     setFine(e.shiftKey)
+    onScrubStart?.()
 
     // The number is a text field as well as part of the bar. Landing on it holds
     // the value still until the pointer proves it meant to scrub, so there is no
@@ -111,6 +116,7 @@ export function Slider(props: SliderProps): JSX.Element {
     drag.current = null
     setDragging(false)
     setFine(false)
+    onScrubEnd?.()
   }
 
   const onWheel = (e: WheelEvent<HTMLDivElement>): void => {

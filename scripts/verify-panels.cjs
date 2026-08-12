@@ -72,6 +72,39 @@ const SCRIPT = `(async () => {
   const stored = JSON.parse(localStorage.getItem('vellum.prefs') || '{}')
   R.choicePersisted = Array.isArray(stored.hiddenPanels) && !stored.hiddenPanels.includes('quick-rail')
 
+  // The thumb must stay wholly inside the track. The track is what receives the
+  // press, so a thumb hanging half outside it at min or max looks clickable and
+  // is not.
+  const thumbInside = () => {
+    const t = sl.querySelector('.railsl-thumb').getBoundingClientRect()
+    const b = sl.getBoundingClientRect()
+    return t.top >= b.top - 0.6 && t.bottom <= b.bottom + 0.6
+  }
+  ed.setBrush({ size: 1 })
+  await sleep(150)
+  R.thumbInsideAtMin = thumbInside()
+  ed.setBrush({ size: 400 })
+  await sleep(150)
+  R.thumbInsideAtMax = thumbInside()
+
+  // A size in pixels is not something anyone can picture, so dragging either size
+  // slider shows the ring.
+  sl.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 21, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, isPrimary: true, button: 0, pointerType: 'mouse' }))
+  await sleep(100)
+  R.railShowsSizeRing = ed.sizePreview.active === true
+  sl.dispatchEvent(new PointerEvent('pointerup', { pointerId: 21, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true }))
+  await sleep(100)
+  R.ringHidesAfterDrag = ed.sizePreview.active === false
+
+  const panelSize = [...document.querySelectorAll('.sl')].find((n) => n.getAttribute('aria-label') === 'Size')
+  panelSize.setPointerCapture = () => {}
+  const pr = panelSize.getBoundingClientRect()
+  panelSize.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 22, clientX: pr.left + pr.width * 0.4, clientY: pr.top + pr.height / 2, bubbles: true, isPrimary: true, button: 0, pointerType: 'mouse' }))
+  await sleep(100)
+  R.panelSliderShowsSizeRing = ed.sizePreview.active === true
+  panelSize.dispatchEvent(new PointerEvent('pointerup', { pointerId: 22, clientX: pr.left + pr.width * 0.4, clientY: pr.top + pr.height / 2, bubbles: true }))
+  await sleep(100)
+
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R
 })()`

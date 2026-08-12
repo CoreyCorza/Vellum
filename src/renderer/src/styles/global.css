@@ -1402,7 +1402,7 @@ button.btn[aria-pressed='true'] {
   border-radius: 5px;
   background: var(--panel-2);
   color: var(--fg-dim);
-  cursor: pointer;
+  cursor: default;
   touch-action: manipulation;
 }
 .quickrail-btn:hover:not(:disabled) {
@@ -1455,6 +1455,8 @@ button.btn[aria-pressed='true'] {
   right: 3px;
   height: 10px;
   margin-bottom: -5px;
+  /* Position comes from script: inset by half its height at each end so it never
+     hangs outside the track, which is the element that receives the press. */
   border-radius: 3px;
   background: #d8d8d8;
   pointer-events: none;

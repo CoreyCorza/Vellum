@@ -428,6 +428,32 @@ export class Editor {
    * produces a right-click, so the ring never appears. It is also the binding
    * to use if you map a pen button to a keystroke in the tablet driver.
    */
+  /**
+   * Show the size ring without arming a scrub.
+   *
+   * Dragging a size slider changes a number, and a number in pixels is not
+   * something anyone can picture — "34" means nothing until you have drawn with
+   * it. The same ring the Alt+RMB scrub draws is the answer, so this shows it while
+   * a slider is being dragged. Defaults to the middle of the viewport, since the
+   * pen is over a panel rather than the canvas.
+   */
+  showSizePreview(x?: number, y?: number): void {
+    // Where you last had the pen, falling back to the middle of the viewport. The
+    // last position is the better default: it is the part of the drawing you were
+    // working on, so the ring appears in context rather than over a panel.
+    const seen = this.cursor.x > -9000 && this.cursor.y > -9000
+    this.sizePreview.active = true
+    this.sizePreview.x = x ?? (seen ? this.cursor.x : this.camera.vw / 2)
+    this.sizePreview.y = y ?? (seen ? this.cursor.y : this.camera.vh / 2)
+    this.invalidate()
+  }
+
+  hideSizePreview(): void {
+    if (!this.sizePreview.active) return
+    this.sizePreview.active = false
+    this.invalidate()
+  }
+
   beginSizeScrub(x: number, y: number, source: ScrubSource): void {
     if (this.scrub) return
     this.scrub = { originX: x, startSize: this.brush.size, source }

@@ -34,6 +34,8 @@ export function QuickRail(): JSX.Element {
           range={{ min: 1, max: 400, gamma: 2.4, step: 0.1 }}
           format={(v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} px`}
           onChange={(size) => editor.setBrush({ size })}
+          onScrubStart={() => editor.showSizePreview()}
+          onScrubEnd={() => editor.hideSizePreview()}
         />
 
         {/* Procreate's square between the sliders opens its colour picker, so this
