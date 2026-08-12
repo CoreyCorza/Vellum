@@ -1168,3 +1168,23 @@ button.btn[aria-pressed='true'] {
   opacity: 1;
   text-decoration: underline;
 }
+
+/* Same rule as the sliders: only a difference is marked. The hover colour has to
+   be restated, or moving the pointer over an overridden row turns it grey again
+   and reads as the marking flickering off. */
+.chk.overridden,
+.chk.overridden:hover {
+  color: var(--differs);
+}
+
+.chk.overridden input {
+  accent-color: var(--differs);
+}
+
+/* The curve is canvas-drawn, so CSS cannot recolour the line. An inset outline
+   marks the widget without changing its size — a border would shift the rows
+   below it by two pixels every time the eraser is selected. */
+.curve-editor.overridden {
+  box-shadow: inset 0 0 0 1px var(--differs);
+  border-radius: 3px;
+}

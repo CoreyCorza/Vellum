@@ -27,11 +27,18 @@ export function CurveEditor({
   value,
   onChange,
   /** Which live telemetry value to trace on the curve, if any. */
-  showLivePressure = true
+  showLivePressure = true,
+  /** False when this curve is the eraser's own rather than the brush's. The
+   *  curve is drawn on a canvas, so the difference is shown as an outline around
+   *  the widget rather than by recolouring the line. */
+  follows,
+  onRelink
 }: {
   value: Curve
   onChange: (next: Curve) => void
   showLivePressure?: boolean
+  follows?: boolean
+  onRelink?: () => void
 }): JSX.Element {
   const editor = useTelemetry()
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -204,7 +211,7 @@ export function CurveEditor({
   }
 
   return (
-    <div className="curve-editor">
+    <div className={`curve-editor${follows === false ? ' overridden' : ''}`}>
       <canvas
         ref={canvasRef}
         style={{ height: HEIGHT }}
@@ -217,6 +224,15 @@ export function CurveEditor({
       />
       <div className="curve-foot">
         <span className="hint">soft ← pressure → hard</span>
+        {follows === false && (
+          <button
+            className="sl-unlink"
+            title="The eraser's own curve, not the brush's. Click to follow the brush again."
+            onClick={onRelink}
+          >
+            ⤺
+          </button>
+        )}
         <button
           className="mini"
           title="Reset to linear"

@@ -29,17 +29,36 @@ export function BrushPanel(): JSX.Element {
     id: string,
     label: string,
     key: 'pressureToSize' | 'pressureToOpacity' | 'pressureToFlow' | 'tiltToSize' | 'speedToSize'
-  ): JSX.Element => (
-    <label className="chk" htmlFor={id}>
-      <input
-        id={id}
-        type="checkbox"
-        checked={b[key]}
-        onChange={(e) => editor.setBrush({ [key]: e.target.checked })}
-      />
-      {label}
-    </label>
-  )
+  ): JSX.Element => {
+    const own = erasing && !editor.eraserFollows(key)
+    return (
+      <label className={`chk${own ? ' overridden' : ''}`} htmlFor={id}>
+        <input
+          id={id}
+          type="checkbox"
+          checked={b[key]}
+          onChange={(e) => editor.setBrush({ [key]: e.target.checked })}
+        />
+        {label}
+        {own && (
+          <button
+            type="button"
+            className="sl-unlink"
+            title="The eraser's own setting, not the brush's. Click to follow the brush again."
+            // The button sits inside the label, so a plain click would also
+            // forward to the checkbox and toggle it on the way past.
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              editor.relinkEraser(key)
+            }}
+          >
+            ⤺
+          </button>
+        )}
+      </label>
+    )
+  }
 
   return (
     <>
@@ -120,6 +139,7 @@ export function BrushPanel(): JSX.Element {
           <CurveEditor
             value={b.sizeCurve}
             onChange={(sizeCurve) => editor.setBrush({ sizeCurve })}
+            {...link('sizeCurve')}
           />
         )}
 
@@ -128,6 +148,7 @@ export function BrushPanel(): JSX.Element {
           <CurveEditor
             value={b.flowCurve}
             onChange={(flowCurve) => editor.setBrush({ flowCurve })}
+            {...link('flowCurve')}
           />
         )}
 
@@ -136,6 +157,7 @@ export function BrushPanel(): JSX.Element {
           <CurveEditor
             value={b.opacityCurve}
             onChange={(opacityCurve) => editor.setBrush({ opacityCurve })}
+            {...link('opacityCurve')}
           />
         )}
 
