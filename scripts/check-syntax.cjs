@@ -55,6 +55,55 @@ const files = fs
   .filter((f) => f.endsWith('.cjs'))
   .map((f) => path.join(dir, f))
 
+const root = path.join(__dirname, '..')
+
+/**
+ * The verification scripts load the built app out of out/, not the sources. Editing a
+ * component and running them without building tests the previous version and reports it
+ * as passing — which has happened twice, both times producing a confident green result
+ * for a fix that was not in the build. Comparing timestamps makes that impossible.
+ */
+function checkBuildIsCurrent() {
+  const built = ['out/main/index.js', 'out/preload/index.mjs', 'out/renderer/index.html']
+    .map((f) => path.join(root, f))
+  for (const f of built) {
+    if (!fs.existsSync(f)) {
+      process.stderr.write(`
+No build at ${path.relative(root, f)} — run: npm run build
+`)
+      return 1
+    }
+  }
+  const builtAt = Math.min(...built.map((f) => fs.statSync(f).mtimeMs))
+
+  let newest = 0
+  let newestFile = ''
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const f = path.join(dir, e.name)
+      if (e.isDirectory()) walk(f)
+      else if (/\.(ts|tsx|css|html|glsl)$/.test(e.name)) {
+        const m = fs.statSync(f).mtimeMs
+        if (m > newest) { newest = m; newestFile = f }
+      }
+    }
+  }
+  walk(path.join(root, 'src'))
+
+  if (newest > builtAt) {
+    const age = Math.round((newest - builtAt) / 1000)
+    process.stderr.write(
+      `
+STALE BUILD — ${path.relative(root, newestFile)} is ${age}s newer than out/.
+` +
+      `Anything loading out/ is testing the previous version. Run: npm run build
+`
+    )
+    return 1
+  }
+  return 0
+}
+
 let bad = 0
 for (const f of files) {
   try {
@@ -67,6 +116,7 @@ for (const f of files) {
 }
 
 bad += checkShaderLiterals()
+bad += checkBuildIsCurrent()
 
 if (bad > 0) {
   process.stderr.write(`\n${bad} problem(s) found across ${files.length} scripts and the shaders.\n`)

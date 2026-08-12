@@ -83,25 +83,43 @@ export function ColorPicker({
   const [mode, setMode] = useState<ColorMode>('hsv')
   const [canvasRevision, setCanvasRevision] = useState(0)
 
-  // Adopt colours set from elsewhere (eyedropper, swatch, preset) without
-  // fighting the user's own dragging: only resync when the hex actually differs
-  // from what our HSV already produces.
+  /**
+   * Hue, saturation and value live here and the hex is what falls out of them — never
+   * the other way around.
+   *
+   * A colour is three bytes, and those bytes stop being able to describe where you are
+   * in the square as you approach its edges: everything along the bottom is black and
+   * everything down the left is grey, so #030404 cannot say which hue you were
+   * dragging or how saturated it was. Reading the picker's own position back out of its
+   * own output therefore threw the handle around, worst in the corners.
+   *
+   * `emitted` is the exact string we last handed out, so recognising our own colour
+   * coming back is a string comparison with nothing to round off. `live` is the current
+   * position, read by the drag handlers: those run from a listener installed on press,
+   * so reading the state directly would use whatever it was when the drag started.
+   */
+  const emitted = useRef<string | null>(null)
+  const live = useRef(hsv)
+  live.current = hsv
+
+  // Adopt colours set from elsewhere (eyedropper, swatch, preset), and leave the
+  // user's own dragging alone: a colour we just produced ourselves is already
+  // represented by the position we are holding, so there is nothing to adopt.
   useEffect(() => {
-    const [r, g, b] = hsvToRgb(hsv[0], hsv[1], hsv[2])
-    if (toHex(r, g, b).toLowerCase() !== color.toLowerCase()) {
-      const m = /^#?([0-9a-f]{6})$/i.exec(color)
-      if (m) {
-        const hexStr = m[1]
-        setHsv(
-          rgbToHsv(
-            parseInt(hexStr.slice(0, 2), 16) / 255,
-            parseInt(hexStr.slice(2, 4), 16) / 255,
-            parseInt(hexStr.slice(4, 6), 16) / 255
-          )
-        )
-      }
-    }
     setText(color)
+    if (emitted.current !== null && color.toLowerCase() === emitted.current.toLowerCase()) return
+    const m = /^#?([0-9a-f]{6})$/i.exec(color)
+    if (!m) return
+    const hexStr = m[1]
+    setHsv(
+      carry(
+        rgbToHsv(
+          parseInt(hexStr.slice(0, 2), 16) / 255,
+          parseInt(hexStr.slice(2, 4), 16) / 255,
+          parseInt(hexStr.slice(4, 6), 16) / 255
+        )
+      )
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [color])
 
@@ -182,16 +200,33 @@ export function ColorPicker({
     }
   }, [hsv, canvasRevision])
 
+  /**
+   * Carry hue and saturation across a position where they cannot be expressed. Black
+   * has no hue and no saturation; grey has no hue. A conversion from a colour reports
+   * zero for those, which would snap the hue strip to red the moment a drag reached the
+   * bottom of the square. Keeping the numbers already in hand means dragging out of a
+   * corner returns the colour you went in with.
+   */
+  const carry = (next: [number, number, number]): [number, number, number] => {
+    const prev = live.current
+    const grey = next[1] < 1e-4
+    const black = next[2] < 1e-4
+    return [grey || black ? prev[0] : next[0], black ? prev[1] : next[1], next[2]]
+  }
+
   const emit = (next: [number, number, number]): void => {
+    live.current = next
     setHsv(next)
     const [r, g, b] = hsvToRgb(next[0], next[1], next[2])
-    onChange(toHex(r, g, b))
+    const hex = toHex(r, g, b)
+    emitted.current = hex
+    onChange(hex)
   }
 
   const rgb = hsvToRgb(hsv[0], hsv[1], hsv[2])
   const hsl = rgbToHsl(rgb[0] / 255, rgb[1] / 255, rgb[2] / 255)
   const emitRgb = (next: [number, number, number]): void => {
-    emit(rgbToHsv(next[0] / 255, next[1] / 255, next[2] / 255))
+    emit(carry(rgbToHsv(next[0] / 255, next[1] / 255, next[2] / 255)))
   }
   const emitHsl = (next: [number, number, number]): void => {
     const nextRgb = hslToRgb(next[0], next[1], next[2])
@@ -227,14 +262,14 @@ export function ColorPicker({
         ref={svRef}
         width={200}
         height={112}
-        onPointerDown={dragHandler((x, y) => emit([hsv[0], x, 1 - y]))}
+        onPointerDown={dragHandler((x, y) => emit([live.current[0], x, 1 - y]))}
       />
       <canvas
         id="hue"
         ref={hueRef}
         width={200}
         height={13}
-        onPointerDown={dragHandler((x) => emit([x * 360, hsv[1], hsv[2]]))}
+        onPointerDown={dragHandler((x) => emit([x * 360, live.current[1], live.current[2]]))}
       />
       <div className="color-mode-row">
         <label htmlFor="color-mode">Channels</label>
@@ -251,9 +286,9 @@ export function ColorPicker({
       <div className="color-channels">
         {mode === 'hsv' && (
           <>
-            <Slider label="Hue" value={hsv[0]} min={0} max={360} step={1} defaultValue={0} format={(v) => `${Math.round(v)}\u00b0`} onChange={(v) => emit([v, hsv[1], hsv[2]])} />
-            <Slider label="Saturation" value={hsv[1] * 100} min={0} max={100} step={1} defaultValue={100} format={(v) => `${Math.round(v)}%`} onChange={(v) => emit([hsv[0], v / 100, hsv[2]])} />
-            <Slider label="Value" value={hsv[2] * 100} min={0} max={100} step={1} defaultValue={100} format={(v) => `${Math.round(v)}%`} onChange={(v) => emit([hsv[0], hsv[1], v / 100])} />
+            <Slider label="Hue" value={hsv[0]} min={0} max={360} step={1} defaultValue={0} format={(v) => `${Math.round(v)}\u00b0`} onChange={(v) => emit([v, live.current[1], live.current[2]])} />
+            <Slider label="Saturation" value={hsv[1] * 100} min={0} max={100} step={1} defaultValue={100} format={(v) => `${Math.round(v)}%`} onChange={(v) => emit([live.current[0], v / 100, live.current[2]])} />
+            <Slider label="Value" value={hsv[2] * 100} min={0} max={100} step={1} defaultValue={100} format={(v) => `${Math.round(v)}%`} onChange={(v) => emit([live.current[0], live.current[1], v / 100])} />
           </>
         )}
         {mode === 'rgb' && (
