@@ -176,20 +176,69 @@ app.whenReady().then(async () => {
       adopted.Saturation > 95 && adopted.Value > 95;
     R.adoptedReads = adopted;
 
-    // 7. Typing a hex still works.
-    if (hexField) {
-      const setter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype, 'value').set;
-      setter.call(hexField, '#0033cc');
-      hexField.dispatchEvent(new Event('input', { bubbles: true }));
+    // 7. The hex field. Typing a colour and leaving the field applies it, and so does
+    //    pressing Enter; Escape abandons what was typed. Enter and Escape both hand
+    //    focus back, because the field swallows key presses while it holds focus.
+    if (!hexField) {
+      R.hexField = 'missing';
+    } else {
+      const setValue = (v) => {
+        Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')
+          .set.call(hexField, v);
+        hexField.dispatchEvent(new Event('input', { bubbles: true }));
+      };
+      const press = (key) => hexField.dispatchEvent(new KeyboardEvent('keydown', {
+        key: key, bubbles: true, cancelable: true
+      }));
+
+      // Leaving the field.
+      hexField.focus();
+      setValue('#0033cc');
       await frame();
       hexField.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
       await frame();
       await frame();
-      R.typedHex = ed.brush.color.toLowerCase();
-      R.typedHexApplied = R.typedHex === '#0033cc';
-    } else {
-      R.typedHexApplied = 'no hex field';
+      R.blurApplied = ed.brush.color.toLowerCase() === '#0033cc';
+
+      // Enter.
+      hexField.focus();
+      setValue('#22bb66');
+      await frame();
+      press('Enter');
+      await frame();
+      await frame();
+      R.enterApplied = ed.brush.color.toLowerCase() === '#22bb66';
+      R.enterDroppedFocus = document.activeElement !== hexField;
+
+      // Escape, which must leave the colour alone and put the field back.
+      hexField.focus();
+      setValue('#ff0000');
+      await frame();
+      press('Escape');
+      await frame();
+      await frame();
+      R.escapeKeptColour = ed.brush.color.toLowerCase() === '#22bb66';
+      R.escapeResetField = hexField.value.toLowerCase() === '#22bb66';
+      R.escapeDroppedFocus = document.activeElement !== hexField;
+
+      // Something that is not a colour: the field goes back to what it was.
+      hexField.focus();
+      setValue('#zzz');
+      await frame();
+      press('Enter');
+      await frame();
+      await frame();
+      R.rubbishKeptColour = ed.brush.color.toLowerCase() === '#22bb66';
+      R.rubbishResetField = hexField.value.toLowerCase() === '#22bb66';
+
+      // Typing must not reach the painting shortcuts.
+      const toolBefore = ed.tool;
+      hexField.focus();
+      press('e');
+      await frame();
+      R.typingDidNotSwitchTool = ed.tool === toolBefore;
+      hexField.blur();
+      await frame();
     }
 
     return R;
@@ -227,7 +276,17 @@ app.whenReady().then(async () => {
   ok('hue strip leaves value alone', R.hueStripValDrift <= 1, 'drifted ' + R.hueStripValDrift + '%')
   ok('a colour set from elsewhere is adopted', R.adoptedExternal === true,
     'read back ' + JSON.stringify(R.adoptedReads))
-  ok('a typed hex is applied', R.typedHexApplied === true, String(R.typedHex))
+  ok('the hex field exists', R.hexField !== 'missing', 'no hex field')
+  ok('a typed hex applies when focus leaves', R.blurApplied === true, 'colour unchanged')
+  ok('Enter applies a typed hex', R.enterApplied === true, 'colour unchanged')
+  ok('Enter hands focus back', R.enterDroppedFocus === true, 'field kept focus')
+  ok('Escape leaves the colour alone', R.escapeKeptColour === true, 'colour changed')
+  ok('Escape puts the field back', R.escapeResetField === true, 'field kept the typed text')
+  ok('Escape hands focus back', R.escapeDroppedFocus === true, 'field kept focus')
+  ok('rubbish leaves the colour alone', R.rubbishKeptColour === true, 'colour changed')
+  ok('rubbish is cleared from the field', R.rubbishResetField === true, 'rubbish stayed')
+  ok('typing does not reach painting shortcuts', R.typingDidNotSwitchTool === true,
+    'pressing e switched tool')
 
   if (errors.length) fail.push('console errors — ' + errors.slice(0, 3).join(' | '))
 
@@ -235,7 +294,7 @@ app.whenReady().then(async () => {
     console.error('picker FAILED:\n  ' + fail.join('\n  '))
     app.exit(1)
   } else {
-    console.log('picker: 16/16 — a drag moves only what you are dragging, corners included')
+    console.log('picker: 25/25 — drags move only what you are dragging, and the hex field commits')
     app.exit(0)
   }
 })

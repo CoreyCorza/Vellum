@@ -101,6 +101,8 @@ export function ColorPicker({
   const emitted = useRef<string | null>(null)
   const live = useRef(hsv)
   live.current = hsv
+  const typed = useRef(text)
+  typed.current = text
 
   // Adopt colours set from elsewhere (eyedropper, swatch, preset), and leave the
   // user's own dragging alone: a colour we just produced ourselves is already
@@ -214,6 +216,19 @@ export function ColorPicker({
     return [grey || black ? prev[0] : next[0], black ? prev[1] : next[1], next[2]]
   }
 
+  /**
+   * Apply what was typed, or put the current colour back if it is not a colour.
+   *
+   * Reached from Enter and from focus leaving the field. Both drop focus, because the
+   * field swallows key presses while it has it, and every painting shortcut is a key
+   * press — the same reason the checkboxes hand focus back after a click.
+   */
+  const commitTyped = (): void => {
+    const m = /^#?([0-9a-f]{6})$/i.exec(typed.current.trim())
+    if (m) onChange(`#${m[1]}`)
+    else setText(color)
+  }
+
   const emit = (next: [number, number, number]): void => {
     live.current = next
     setHsv(next)
@@ -311,13 +326,23 @@ export function ColorPicker({
         spellCheck={false}
         maxLength={7}
         value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => e.stopPropagation()}
-        onBlur={() => {
-          const m = /^#?([0-9a-f]{6})$/i.exec(text.trim())
-          if (m) onChange(`#${m[1]}`)
-          else setText(color)
+        onChange={(e) => {
+          typed.current = e.target.value
+          setText(e.target.value)
         }}
+        onKeyDown={(e) => {
+          // Painting shortcuts must not fire while a colour is being typed.
+          e.stopPropagation()
+          if (e.key === 'Enter') {
+            commitTyped()
+            e.currentTarget.blur()
+          } else if (e.key === 'Escape') {
+            typed.current = color
+            setText(color)
+            e.currentTarget.blur()
+          }
+        }}
+        onBlur={commitTyped}
       />
     </div>
   )
