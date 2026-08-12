@@ -15,6 +15,16 @@ export interface SliderProps {
   defaultValue: number
   format: (v: number) => string
   onChange: (v: number) => void
+  /**
+   * Eraser inheritance, when this row can inherit at all.
+   *
+   * `true` means the value is still following the brush, and the row says so
+   * instead of pretending to be its own setting. Omit entirely on rows where
+   * inheritance does not apply, and no indicator is rendered.
+   */
+  follows?: boolean
+  /** Offered only when `follows` is false: send this value back to the brush. */
+  onRelink?: () => void
 }
 
 /**
@@ -29,7 +39,7 @@ export interface SliderProps {
  * mapping, shift-fine drag, wheel nudge, double-click reset, typed entry.
  */
 export function Slider(props: SliderProps): JSX.Element {
-  const { label, value, min, max, step, defaultValue, format, onChange } = props
+  const { label, value, min, max, step, defaultValue, format, onChange, follows, onRelink } = props
   const gamma = props.gamma ?? 1
   const trackRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{ rect: DOMRect; startX: number; startPos: number; fine: boolean } | null>(null)
@@ -92,7 +102,9 @@ export function Slider(props: SliderProps): JSX.Element {
 
   return (
     <div
-      className={`sl${dragging ? ' drag' : ''}${fine ? ' fine' : ''}`}
+      className={`sl${dragging ? ' drag' : ''}${fine ? ' fine' : ''}${
+        follows === true ? ' inherited' : ''
+      }`}
       tabIndex={0}
       onWheel={onWheel}
       onDoubleClick={() => commit(defaultValue)}
@@ -110,7 +122,26 @@ export function Slider(props: SliderProps): JSX.Element {
       title={`${label} — drag, shift-drag for fine, wheel to nudge, double-click for default, click the number to type it`}
     >
       <div className="sl-top">
-        <span className="sl-lab">{label}</span>
+        <span className="sl-lab">
+          {label}
+          {follows === true && (
+            <span className="sl-link" title="Following the brush. Change it to give the eraser its own.">
+              ⇢
+            </span>
+          )}
+          {follows === false && (
+            <button
+              className="sl-unlink"
+              title="The eraser's own value. Click to follow the brush again."
+              onClick={(e) => {
+                e.stopPropagation()
+                onRelink?.()
+              }}
+            >
+              ⤺
+            </button>
+          )}
+        </span>
         {editing ? (
           <input
             className="sl-edit"

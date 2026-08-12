@@ -8,7 +8,7 @@ import { StatusBar } from './components/StatusBar'
 import { MenuBar } from './components/MenuBar'
 import { CanvasBar } from './components/CanvasBar'
 import { SettingsDialog } from './components/SettingsDialog'
-import { loadPrefs } from './prefs'
+import { loadPrefs, savePrefs } from './prefs'
 import { savePng } from './platform'
 import { clamp } from '@engine/types'
 import type { Modifiers } from '@engine/input'
@@ -37,6 +37,26 @@ export function App(): JSX.Element {
     const prefs = loadPrefs()
     editor.setCursorStyle(prefs.cursorStyle)
     editor.setCanvasScalingMode(prefs.canvasScalingMode)
+    editor.restoreEraserOverrides(prefs.eraserOverrides)
+  }, [editor])
+
+  /**
+   * Persist the eraser's own settings whenever they change.
+   *
+   * One subscription rather than a save call in each control: overrides are
+   * created by the sliders, the checkboxes, the curve editors, the presets AND
+   * by scrubbing size with Alt+RMB, and a control that forgot to save would be a
+   * silent, occasional data loss. Comparing the serialised form keeps this to a
+   * write only when something actually moved.
+   */
+  useEffect(() => {
+    let last = JSON.stringify(editor.eraserOverrides)
+    return editor.ui.subscribe(() => {
+      const now = JSON.stringify(editor.eraserOverrides)
+      if (now === last) return
+      last = now
+      savePrefs({ eraserOverrides: editor.eraserOverrides })
+    })
   }, [editor])
 
   const onExport = async (): Promise<void> => {

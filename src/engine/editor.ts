@@ -85,8 +85,87 @@ export class Editor {
    */
   readonly nav = new NavDrag()
 
-  brush: BrushSettings = { ...DEFAULT_BRUSH }
+  /**
+   * The brush's own settings. Read through `brush`, never directly, so the
+   * eraser's overlay is always applied.
+   */
+  private brushBase: BrushSettings = { ...DEFAULT_BRUSH }
+
+  /**
+   * What the eraser does DIFFERENTLY from the brush — nothing, to begin with.
+   *
+   * Two camps expect opposite things here. Krita's eraser is the current brush
+   * with the composite op flipped, so it follows every change you make. In
+   * Photoshop and Clip Studio the eraser is a separate tool with its own
+   * settings that never move when you change brushes.
+   *
+   * Rather than a preference nobody would find, a value INHERITS until it is
+   * touched. Press E and erase and you get your brush exactly, forever, which is
+   * the Krita expectation and requires learning nothing. Adjust the eraser's
+   * hardness once and that one value stops following, which is the Photoshop
+   * expectation and arrives by doing the obvious thing rather than by reading a
+   * dialog.
+   *
+   * Per property rather than all-or-nothing, because the useful case neither
+   * application can express is a hard eraser that still tracks the brush's size.
+   */
+  eraserOverrides: Partial<BrushSettings> = {}
+
   tool: ToolId = 'brush'
+
+  /** Resolved settings, cached: the dab loop reads these per dab, so they cannot
+   *  be rebuilt on every access. Recomputed by `reresolve`. */
+  private resolvedBrush: BrushSettings = { ...DEFAULT_BRUSH }
+  private resolvedEraser: BrushSettings = { ...DEFAULT_BRUSH }
+
+  /**
+   * Settings as the panel should show them: the eraser's when the eraser is the
+   * selected tool.
+   */
+  get brush(): BrushSettings {
+    return this.tool === 'eraser' ? this.resolvedEraser : this.resolvedBrush
+  }
+
+  /** Settings for a stroke. Not the same question as `brush`: flipping the pen
+   *  over erases without changing the selected tool. */
+  settingsFor(erasing: boolean): BrushSettings {
+    return erasing ? this.resolvedEraser : this.resolvedBrush
+  }
+
+  /** Is this value still following the brush? */
+  eraserFollows(key: keyof BrushSettings): boolean {
+    return this.eraserOverrides[key] === undefined
+  }
+
+  get eraserOverrideCount(): number {
+    return Object.keys(this.eraserOverrides).length
+  }
+
+  /** Send one value, or all of them, back to following the brush. */
+  relinkEraser(key?: keyof BrushSettings): void {
+    if (key === undefined) this.eraserOverrides = {}
+    else delete this.eraserOverrides[key]
+    this.reresolve()
+    this.strokes.invalidateTip()
+    this.invalidate()
+    this.ui.emit()
+  }
+
+  /** Restore persisted overrides at boot. Values are validated by the caller. */
+  restoreEraserOverrides(o: Partial<BrushSettings>): void {
+    this.eraserOverrides = { ...o }
+    delete this.eraserOverrides.color
+    delete this.eraserOverrides.symmetry
+    this.reresolve()
+    this.strokes.invalidateTip()
+    this.invalidate()
+    this.ui.emit()
+  }
+
+  private reresolve(): void {
+    this.resolvedBrush = { ...this.brushBase }
+    this.resolvedEraser = { ...this.brushBase, ...this.eraserOverrides }
+  }
 
   /**
    * Where pen input comes from. When 'wintab', the Pointer Events layer ignores
@@ -190,7 +269,7 @@ export class Editor {
     this.compositor = new Compositor(width, height)
     this.glStroke = new GLStrokeRenderer(width, height)
     this.backup = new Surface(width, height)
-    this.strokes = new StrokeEngine(() => this.brush)
+    this.strokes = new StrokeEngine(() => this.settingsFor(this.strokes.erasing))
     this.checker = makeChecker()
 
     this.history.onChange = () => {
@@ -245,6 +324,10 @@ export class Editor {
 
   setTool(t: ToolId): void {
     this.tool = t
+    // Switching between brush and eraser can change the effective hardness, so
+    // the cursor's tip sprite is stale.
+    this.strokes.invalidateTip()
+    this.invalidate()
     this.ui.emit()
   }
 
@@ -291,7 +374,25 @@ export class Editor {
   }
 
   setBrush(patch: Partial<BrushSettings>): void {
-    Object.assign(this.brush, patch)
+    if (this.tool === 'eraser') {
+      Object.assign(this.eraserOverrides, patch)
+    } else {
+      Object.assign(this.brushBase, patch)
+    }
+
+    // Colour and symmetry are never the eraser's own. An eraser has no colour,
+    // so picking one while it is selected must set the colour you will paint
+    // with next; and symmetry is a property of the canvas, not of a tool.
+    if (patch.color !== undefined) {
+      this.brushBase.color = patch.color
+      delete this.eraserOverrides.color
+    }
+    if (patch.symmetry !== undefined) {
+      this.brushBase.symmetry = patch.symmetry
+      delete this.eraserOverrides.symmetry
+    }
+
+    this.reresolve()
     if (patch.hardness !== undefined || patch.color !== undefined) {
       this.strokes.invalidateTip()
     }

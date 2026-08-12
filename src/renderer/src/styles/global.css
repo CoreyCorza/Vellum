@@ -1103,3 +1103,43 @@ button.btn[aria-pressed='true'] {
   border-color: #4d7fce;
   color: #9cc2ff;
 }
+
+/* --- Eraser inheritance -----------------------------------------------------
+   A row that is still following the brush has to look like it is reporting a
+   value rather than holding one, or the eraser reads as a second set of
+   settings that mysteriously change by themselves. Dimmed, with a small glyph;
+   overridden rows look completely normal, because they ARE normal. */
+.sl.inherited .sl-val {
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.sl-link,
+.sl-unlink {
+  margin-left: 5px;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.45;
+}
+
+.sl-unlink {
+  background: none;
+  border: 0;
+  padding: 0 2px;
+  color: inherit;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.sl-unlink:hover {
+  opacity: 1;
+  color: #e8b04f;
+}
+
+.eraser-note .hint {
+  margin: 0 0 6px;
+}
+
+.eraser-note .btn {
+  width: 100%;
+}
