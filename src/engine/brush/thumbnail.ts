@@ -56,6 +56,27 @@ export class PresetThumbnails {
     return this.render({ id: 'live', name: '', erase, settings })
   }
 
+  /**
+   * Paint the current settings straight onto someone else's canvas.
+   *
+   * For anything that updates continuously. `live` returns a data URL, which means
+   * a synchronous PNG encode plus a GPU readback per call — fine for a preset
+   * thumbnail generated once, ruinous for a strip that follows a slider: scrubbing
+   * brush size with Alt+RMB re-encoded a 440x104 PNG every frame and the whole app
+   * stuttered. This blits instead, which is a GPU-side copy.
+   */
+  paintInto(
+    target: CanvasRenderingContext2D,
+    width: number,
+    height: number,
+    settings: BrushSettings,
+    erase: boolean
+  ): void {
+    if (!this.paint({ id: 'live', name: '', erase, settings }) || !this.surface) return
+    target.clearRect(0, 0, width, height)
+    target.drawImage(this.surface.canvas, 0, 0, width, height)
+  }
+
   /** Drop one preset's preview, or all of them, after an edit. */
   invalidate(id?: string): void {
     if (id === undefined) this.cache.clear()
@@ -80,7 +101,13 @@ export class PresetThumbnails {
   }
 
   private render(preset: BrushPreset): string {
-    if (!this.ensure() || !this.gl || !this.engine || !this.surface) return ''
+    if (!this.paint(preset) || !this.surface) return ''
+    return this.surface.canvas.toDataURL('image/png')
+  }
+
+  /** Draws into the internal surface. Returns false if there is no WebGL2. */
+  private paint(preset: BrushPreset): boolean {
+    if (!this.ensure() || !this.gl || !this.engine || !this.surface) return false
     const w = this.w * SCALE
     const h = this.h * SCALE
 
@@ -125,7 +152,7 @@ export class PresetThumbnails {
       g.restore()
     }
 
-    return this.surface.canvas.toDataURL('image/png')
+    return true
   }
 
   /** Compress the real size into the strip, spread so 2px and 24px still differ. */

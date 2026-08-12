@@ -24,6 +24,11 @@ app.whenReady().then(async () => {
   await win.loadFile(path.join(root, 'out/renderer/index.html'))
   await new Promise((r) => setTimeout(r, 1500))
 
+  // Stored preferences can hide panels, and this asserts a layer row exists — so
+  // start from nothing rather than from whatever the last run left in localStorage.
+  await win.webContents.executeJavaScript('(() => { localStorage.clear(); location.reload(); return 1 })()')
+  await new Promise((r) => setTimeout(r, 2600))
+
   const result = await win.webContents.executeJavaScript(`(() => {
     const root = document.getElementById('root');
     const stage = document.getElementById('view');

@@ -7,6 +7,7 @@ import { CurveEditor } from './CurveEditor'
 import { PresetBox } from './PresetBox'
 import { Section } from './Section'
 import { StrokePreview } from './StrokePreview'
+import { PlannedSections } from './PlannedSections'
 
 const pct = (v: number): string => `${Math.round(v)}%`
 
@@ -65,6 +66,8 @@ export function BrushPanel(): JSX.Element {
         }
         initialTop={10}
         initialRight={10}
+        initialWidth={430}
+        initialHeight={720}
       >
       <StrokePreview />
 
@@ -102,6 +105,8 @@ export function BrushPanel(): JSX.Element {
           format={pct} onChange={(v) => editor.setBrush({ spacing: v / 100 })}
         />
       </Section>
+
+      <PlannedSections />
 
       <Section
         id="dynamics"

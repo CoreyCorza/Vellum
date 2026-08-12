@@ -25,6 +25,7 @@ export function Section({
   title,
   summary,
   defaultOpen = false,
+  planned = false,
   children
 }: {
   id: string
@@ -32,6 +33,12 @@ export function Section({
   /** Shown in the header when collapsed: the values, not a description. */
   summary?: ReactNode
   defaultOpen?: boolean
+  /**
+   * Sketched, not wired up. The controls show so the shape of the feature can be
+   * judged, but nothing responds and the header says so — a control that looks live
+   * and does nothing is worse than an obviously unfinished one.
+   */
+  planned?: boolean
   children: ReactNode
 }): JSX.Element {
   const [open, setOpen] = useState(() => {
@@ -61,8 +68,13 @@ export function Section({
         {/* Hidden when open, because the controls themselves are then the summary
             and the same numbers twice is noise. */}
         {!open && summary !== undefined && <span className="sect-summary">{summary}</span>}
+        {planned && <span className="sect-planned">planned</span>}
       </button>
-      {open && <div className="sect-body">{children}</div>}
+      {open && (
+        <div className={'sect-body' + (planned ? ' planned' : '')} aria-disabled={planned}>
+          {children}
+        </div>
+      )}
     </div>
   )
 }

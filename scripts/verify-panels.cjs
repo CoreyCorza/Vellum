@@ -322,14 +322,23 @@ const SCRIPT = `(async () => {
 
   // A live stroke of the current brush, since with categories closed you can only
   // see a few settings at once and something has to show the combined result.
-  const strip = document.querySelector('.stroke-preview img')
-  R.livePreviewExists = !!strip && strip.src.startsWith('data:image/png')
-  const wasSrc = strip ? strip.src : ''
-  ed.setBrush({ size: 120, hardness: 1 })
-  await sleep(360)
-  R.livePreviewFollowsTheBrush =
-    !!document.querySelector('.stroke-preview img') &&
-    document.querySelector('.stroke-preview img').src !== wasSrc
+  // A canvas, not an <img>: the first version swapped a data URL into an img on
+  // every change, which meant a PNG encode and decode per frame while scrubbing.
+  // Compared by PIXELS rather than by a src string, which is both what changed and
+  // a stronger claim — a stale canvas would pass a src check trivially.
+  const strip = document.querySelector('.stroke-preview canvas')
+  R.livePreviewExists = !!strip && strip.width > 0 && strip.height > 0
+  const sampleStrip = () => {
+    const g = strip.getContext('2d')
+    const d = g.getImageData(0, 0, strip.width, strip.height).data
+    let sum = 0
+    for (let i = 0; i < d.length; i += 4 * 53) sum += d[i] + d[i + 3]
+    return sum
+  }
+  const wasInk = strip ? sampleStrip() : 0
+  ed.setBrush({ size: 12, hardness: 1, pressureToSize: false })
+  await sleep(420)
+  R.livePreviewFollowsTheBrush = strip ? sampleStrip() !== wasInk : false
 
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R
