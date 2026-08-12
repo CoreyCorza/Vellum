@@ -89,6 +89,13 @@ export class Editor {
   tool: ToolId = 'brush'
 
   /**
+   * Strokes finished since launch. Not statistics — the spring-loaded eraser
+   * needs to know whether the tool was USED while its key was held, which is
+   * what separates "hold E to erase a bit" from "tap E to switch to it".
+   */
+  strokesCommitted = 0
+
+  /**
    * Where pen input comes from. When 'wintab', the Pointer Events layer ignores
    * `pointerType === 'pen'` entirely so the two sources cannot both drive the
    * same stroke. Mouse and touch always stay on Pointer Events.
@@ -345,6 +352,7 @@ export class Editor {
 
   endStroke(): void {
     if (!this.strokes.active) return
+    this.strokesCommitted++
     const erasing = this.strokes.erasing
     this.strokes.end()
 
