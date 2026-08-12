@@ -518,7 +518,8 @@ table.kv td:last-child {
 .rail-grab:active {
   cursor: grabbing;
 }
-.rail-grab i {
+.rail-grab i,
+.floating-panel-head.rail-head i {
   width: 12px;
   height: 2px;
   border-radius: 2px;
@@ -1519,4 +1520,24 @@ button.btn[aria-pressed='true'] {
 .panel-menu[aria-expanded='true'] {
   opacity: 1;
   background: #ffffff14;
+}
+
+/* --- Rail-styled panels -----------------------------------------------------
+   A strip of two sliders is more of a rail than a panel, so it borrows the tool
+   rail's chrome: a small centred grip rather than a titled bar. The two sitting
+   next to each other with different headers read as an oversight. */
+.floating-panel-head.rail-head {
+  /* The tool rail's grip height exactly, so the two read as one family. */
+  height: 10px;
+  padding: 0;
+  justify-content: center;
+  background: none;
+  border-bottom: 0;
+}
+
+.floating-panel:has(.rail-head) {
+  border-radius: 8px;
+}
+.floating-panel:has(.rail-head) .floating-panel-body {
+  padding: 2px 5px 5px;
 }

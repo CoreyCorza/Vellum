@@ -44,6 +44,7 @@ export function FloatingPanel({
   title,
   titleSuffix,
   hideTitle,
+  variant = 'panel',
   menu,
   minWidth,
   initialWidth,
@@ -60,6 +61,12 @@ export function FloatingPanel({
   /** Drop the title text but keep the bar, for a panel narrow enough that a name
    *  would be the widest thing in it. */
   hideTitle?: boolean
+  /**
+   * 'rail' borrows the tool rail's chrome: a small centred grip instead of a
+   * titled bar. A strip of two sliders is more of a rail than a panel, and the two
+   * sitting side by side with different headers looked like an oversight.
+   */
+  variant?: 'panel' | 'rail'
   /**
    * View options for THIS panel — the contents of the header's hamburger.
    *
@@ -190,7 +197,7 @@ export function FloatingPanel({
       }
     >
       <div
-        className="floating-panel-head"
+        className={`floating-panel-head${variant === 'rail' ? ' rail-head' : ''}`}
         onPointerDown={(event) => {
           if (event.button !== 0 || !panelRef.current) return
           const bounds = panelRef.current.getBoundingClientRect()
@@ -220,10 +227,14 @@ export function FloatingPanel({
           drag.current = null
         }}
       >
-        <span>
-          {hideTitle ? '' : title}
-          {titleSuffix}
-        </span>
+        {variant === 'rail' ? (
+          <i aria-hidden="true" />
+        ) : (
+          <span>
+            {hideTitle ? '' : title}
+            {titleSuffix}
+          </span>
+        )}
         {menu && (
           <button
             className="panel-menu"

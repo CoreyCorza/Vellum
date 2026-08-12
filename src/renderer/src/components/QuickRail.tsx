@@ -21,7 +21,7 @@ export function QuickRail(): JSX.Element {
     <FloatingPanel
       id="quick-rail"
       title="Quick rail"
-      hideTitle
+      variant="rail"
       initialTop={120}
       initialRight={1180}
       initialHeight={420}

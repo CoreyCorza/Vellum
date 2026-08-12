@@ -193,11 +193,16 @@ const SCRIPT = `(async () => {
 
   // Panel headers: no decorative dash, view options behind a hamburger, and no
   // second header inside the body repeating what the panel is called.
-  R.noDecorativeDash = document.querySelectorAll('.floating-panel-head i').length === 0
+  // Titled panels carry no dash. The rail variant's <i> is its grip, not decoration,
+  // so it is excluded rather than counted as a regression.
+  R.noDecorativeDash =
+    document.querySelectorAll('.floating-panel-head:not(.rail-head) i').length === 0
   R.shelfHasNoInnerHeader = !document.querySelector('.preset-shelf .sec-head')
+  // No title text at all. Asserted on the header's text rather than on a span,
+  // because the rail variant renders a grip instead of a title element.
   const railHead = [...document.querySelectorAll('.floating-panel-head')]
     .find((h) => h.closest('.floating-panel').querySelector('.quickrail'))
-  R.quickRailHasNoTitle = railHead ? railHead.querySelector('span').textContent.trim() === '' : false
+  R.quickRailHasNoTitle = railHead ? railHead.textContent.trim() === '' : false
 
   const shelfPanel = document.querySelector('.preset-shelf').closest('.floating-panel')
   const ham = shelfPanel.querySelector('.panel-menu')
@@ -214,6 +219,26 @@ const SCRIPT = `(async () => {
     : false
   R.openingMenuDoesNotDragPanel =
     Math.round(shelfPanel.getBoundingClientRect().left) === Math.round(boxBefore.left)
+
+  // The quick rail wears the tool rail's chrome, because a strip of two sliders is
+  // more of a rail than a panel. Compared against the tool rail rather than against
+  // fixed numbers, so the two cannot drift apart.
+  const grip = document.querySelector('.rail-grab')
+  const railGrip = document.querySelector('.rail-head')
+  R.railHeadExists = !!railGrip
+  if (grip && railGrip) {
+    const shape = (el) => {
+      const i = el.querySelector('i')
+      const c = getComputedStyle(i)
+      const r = i.getBoundingClientRect()
+      return [Math.round(r.width), Math.round(r.height), c.backgroundColor, c.opacity].join('|')
+    }
+    R.gripsMatch = shape(grip) === shape(railGrip)
+    R.gripHeightsMatch =
+      Math.round(grip.getBoundingClientRect().height) ===
+      Math.round(railGrip.getBoundingClientRect().height)
+    R.railHeadHasNoTitleBar = getComputedStyle(railGrip).backgroundColor === 'rgba(0, 0, 0, 0)'
+  }
 
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R
