@@ -61,32 +61,28 @@ export function BrushPanel(): JSX.Element {
             </button>
           ))}
         </div>
-        {erasing && (
-          <p className="hint">
-            Presets set the brush. The eraser keeps whatever it owns and follows
-            the rest.
-          </p>
-        )}
       </div>
 
       <div className="sec">
-        <h2>{erasing ? 'Eraser' : 'Brush'}</h2>
-        {erasing && (
-          <div className="eraser-note">
-            <p className="hint">
-              {editor.eraserOverrideCount === 0
-                ? 'Following the brush. Change anything to give the eraser its own.'
-                : `${editor.eraserOverrideCount} setting${
-                    editor.eraserOverrideCount === 1 ? '' : 's'
-                  } of its own; the rest follow the brush.`}
-            </p>
-            {editor.eraserOverrideCount > 0 && (
-              <button className="btn" onClick={() => editor.relinkEraser()}>
-                Follow brush
-              </button>
-            )}
-          </div>
-        )}
+        {/* Fixed height in BOTH modes, so gaining the relink action cannot move
+            anything below it. A panel that jumps every time you press E is worse
+            than no feedback at all. */}
+        <div className="sec-head brush-head">
+          <h2>{erasing ? 'Eraser' : 'Brush'}</h2>
+          {erasing && editor.eraserOverrideCount > 0 && (
+            <button
+              className="relink-all"
+              title={
+                `The eraser has ${editor.eraserOverrideCount} setting` +
+                `${editor.eraserOverrideCount === 1 ? '' : 's'} of its own, shown in blue. ` +
+                'The rest follow the brush. Click to give them all back.'
+              }
+              onClick={() => editor.relinkEraser()}
+            >
+              Follow brush
+            </button>
+          )}
+        </div>
         <Slider
           label="Size" value={b.size} min={1} max={400} gamma={2.4} step={0.1} defaultValue={34}
           format={(v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} px`}

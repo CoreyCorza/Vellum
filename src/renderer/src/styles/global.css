@@ -10,6 +10,9 @@
   --fg-faint: #c4c4c4;
   --accent: #ffffff;
   --accent-dim: #2c2c2c;
+  /* Marks a value that differs from the one it would otherwise inherit —
+     currently only the eraser's own settings. */
+  --differs: #59a9f0;
   --radius: 6px;
 
   --panel-shadow: 0 8px 24px #00000055;
@@ -1104,42 +1107,64 @@ button.btn[aria-pressed='true'] {
   color: #9cc2ff;
 }
 
-/* --- Eraser inheritance -----------------------------------------------------
-   A row that is still following the brush has to look like it is reporting a
-   value rather than holding one, or the eraser reads as a second set of
-   settings that mysteriously change by themselves. Dimmed, with a small glyph;
-   overridden rows look completely normal, because they ARE normal. */
-.sl.inherited .sl-val {
-  opacity: 0.5;
-  font-style: italic;
+/* --- Eraser inheritance ---------------------------------------------------
+   Only a DIFFERENCE is marked, and it is marked with colour rather than with
+   text. Two reasons. Explaining the rule in the panel adds a paragraph that
+   appears and disappears with the tool, so the whole column jumps every time E
+   is pressed — worse than saying nothing. And marking the inherited state, which
+   is the default and by far the common one, repaints the panel on toggle for no
+   information. Blue means "this one is the eraser's own"; everything unmarked
+   follows the brush, which is what pressing E did before any of this existed. */
+.sl.overridden .sl-lab,
+.sl.overridden .sl-val {
+  color: var(--differs);
 }
 
-.sl-link,
+.sl.overridden .sl-fill {
+  background: var(--differs);
+}
+
+.sl.overridden .sl-knob {
+  background: var(--differs);
+  border-color: var(--differs);
+}
+
 .sl-unlink {
   margin-left: 5px;
   font-size: 11px;
   line-height: 1;
-  opacity: 0.45;
-}
-
-.sl-unlink {
   background: none;
   border: 0;
   padding: 0 2px;
-  color: inherit;
+  color: var(--differs);
   cursor: pointer;
-  opacity: 0.7;
+  opacity: 0.8;
 }
 
 .sl-unlink:hover {
   opacity: 1;
-  color: #e8b04f;
 }
 
-.eraser-note .hint {
+/* Held at the height of the taller of the two states, so gaining or losing the
+   relink action never moves the sliders underneath. */
+.sec-head.brush-head {
+  min-height: 18px;
+}
+
+.relink-all {
+  background: none;
+  border: 0;
+  padding: 0;
   margin: 0 0 6px;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--differs);
+  cursor: pointer;
+  opacity: 0.85;
 }
 
-.eraser-note .btn {
-  width: 100%;
+.relink-all:hover {
+  opacity: 1;
+  text-decoration: underline;
 }

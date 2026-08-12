@@ -18,9 +18,9 @@ export interface SliderProps {
   /**
    * Eraser inheritance, when this row can inherit at all.
    *
-   * `true` means the value is still following the brush, and the row says so
-   * instead of pretending to be its own setting. Omit entirely on rows where
-   * inheritance does not apply, and no indicator is rendered.
+   * Only a value that DIFFERS is marked. Following the brush is the default
+   * state, and marking the default means the panel changes appearance the moment
+   * you press E, for no information. Omit on rows where inheritance cannot apply.
    */
   follows?: boolean
   /** Offered only when `follows` is false: send this value back to the brush. */
@@ -103,7 +103,7 @@ export function Slider(props: SliderProps): JSX.Element {
   return (
     <div
       className={`sl${dragging ? ' drag' : ''}${fine ? ' fine' : ''}${
-        follows === true ? ' inherited' : ''
+        follows === false ? ' overridden' : ''
       }`}
       tabIndex={0}
       onWheel={onWheel}
@@ -124,15 +124,10 @@ export function Slider(props: SliderProps): JSX.Element {
       <div className="sl-top">
         <span className="sl-lab">
           {label}
-          {follows === true && (
-            <span className="sl-link" title="Following the brush. Change it to give the eraser its own.">
-              ⇢
-            </span>
-          )}
           {follows === false && (
             <button
               className="sl-unlink"
-              title="The eraser's own value. Click to follow the brush again."
+              title="The eraser's own value, not the brush's. Click to follow the brush again."
               onClick={(e) => {
                 e.stopPropagation()
                 onRelink?.()
