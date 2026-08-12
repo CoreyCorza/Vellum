@@ -54,13 +54,19 @@ export function BrushPanel(): JSX.Element {
               aria-pressed={preset === p.name}
               onClick={() => {
                 setPreset(p.name)
-                editor.setBrush(p.settings)
+                editor.applyBrushPreset(p.settings)
               }}
             >
               {p.name}
             </button>
           ))}
         </div>
+        {erasing && (
+          <p className="hint">
+            Presets set the brush. The eraser keeps whatever it owns and follows
+            the rest.
+          </p>
+        )}
       </div>
 
       <div className="sec">

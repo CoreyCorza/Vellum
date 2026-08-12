@@ -373,6 +373,27 @@ export class Editor {
     this.invalidate()
   }
 
+  /**
+   * Apply a brush preset. Always to the BRUSH, whatever tool is selected.
+   *
+   * A preset is a statement about the brush, not about whichever tool happens to
+   * be active. Routing it through setBrush while the eraser was selected wrote
+   * the whole preset into the eraser's overrides: the brush did not change at
+   * all, and every setting in the preset silently stopped following it — one
+   * click to dismantle the entire inheritance model, which is the exact failure
+   * the design is meant to avoid.
+   *
+   * Existing eraser overrides are deliberately LEFT ALONE. They are decisions the
+   * user made; a preset changes what the eraser inherits, not what it owns.
+   */
+  applyBrushPreset(patch: Partial<BrushSettings>): void {
+    Object.assign(this.brushBase, patch)
+    this.reresolve()
+    this.strokes.invalidateTip()
+    this.invalidate()
+    this.ui.emit()
+  }
+
   setBrush(patch: Partial<BrushSettings>): void {
     if (this.tool === 'eraser') {
       Object.assign(this.eraserOverrides, patch)

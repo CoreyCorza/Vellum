@@ -67,6 +67,23 @@ const SCRIPT = `(() => {
   ed.setTool('brush')
   R.relinkLeftBrushAlone = ed.brush.hardness === 0.05
 
+  // 8. A preset is a statement about the BRUSH, whichever tool is selected.
+  //    Routing it through the eraser wrote the whole preset into overrides: the
+  //    brush never changed and every setting stopped following in one click.
+  ed.setTool('brush')
+  ed.relinkEraser()
+  ed.setBrush({ size: 40, hardness: 0.2 })
+  ed.setTool('eraser')
+  ed.setBrush({ hardness: 1 })            // the eraser owns hardness now
+  ed.applyBrushPreset({ size: 8, hardness: 0.92, flow: 1 })
+
+  ed.setTool('brush')
+  R.presetReachesBrush = ed.brush.size === 8 && ed.brush.hardness === 0.92
+  ed.setTool('eraser')
+  R.presetCreatesNoOverrides = ed.eraserOverrideCount === 1
+  R.presetFlowsToInherited = ed.brush.size === 8 && ed.brush.flow === 1
+  R.presetLeavesOwnedAlone = ed.brush.hardness === 1
+
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R
 })()`
