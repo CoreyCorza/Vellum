@@ -1125,10 +1125,6 @@ button.btn[aria-pressed='true'] {
 }
 
 .preset-menu {
-  position: absolute;
-  top: 18px;
-  right: 0;
-  z-index: 40;
   width: 168px;
   padding: 8px;
   background: var(--panel-2);
@@ -1158,6 +1154,10 @@ button.btn[aria-pressed='true'] {
 .preset-well {
   flex: 1;
   min-height: 60px;
+  /* Reserved always. Otherwise the scrollbar appearing narrows the content, which
+     drops a column, which shortens the grid, which removes the scrollbar — and the
+     panel flickers between the two states while being resized. */
+  scrollbar-gutter: stable;
   background: #2e2e2e;
   border: 1px solid var(--line-2);
   border-radius: 4px;
@@ -1343,13 +1343,6 @@ button.btn[aria-pressed='true'] {
 
 /* Actions open UPWARDS from the footer: downwards would go off the bottom of the
    panel, and the footer is already at the bottom. */
-.preset-menu.up {
-  top: auto;
-  bottom: 24px;
-  right: auto;
-  left: 0;
-  width: 150px;
-}
 .preset-menu .btn.danger {
   background: #4a2a26;
   color: #e8bdb5;
@@ -1363,4 +1356,17 @@ button.btn[aria-pressed='true'] {
 .mini.danger.armed {
   background: #8c3f36;
   color: #fdece8;
+}
+
+/* --- Portalled popovers -----------------------------------------------------
+   Panels clip their contents (overflow: hidden, so a rounded corner actually
+   rounds), which meant any menu opening near an edge was cut off and unusable.
+   These render into the document body instead and are placed from script. */
+.popover {
+  position: fixed;
+  z-index: 200;
+}
+
+.chev {
+  display: block;
 }

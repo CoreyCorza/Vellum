@@ -4,11 +4,14 @@ import { PresetThumbnails } from '@engine/brush/thumbnail'
 import { Slider } from './Slider'
 import { loadPrefs, savePrefs } from '../prefs'
 import type { BrushPreset } from '@engine/brush/presets'
+import { Chevron, Popover } from './Popover'
 
 export type PresetView = 'list' | 'icons'
 
 /** Below this the footer cannot hold five buttons, so it collapses to a menu. */
 const NARROW = 168
+/** Dead band, so dragging across the threshold does not flap back and forth. */
+const NARROW_HYSTERESIS = 20
 
 /**
  * The brush shelf — its own panel, so it can be resized to taste.
@@ -33,6 +36,8 @@ export function PresetBox(): JSX.Element {
   const headRef = useRef<HTMLDivElement>(null)
   const footRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
+  const headBtn = useRef<HTMLButtonElement>(null)
+  const footBtn = useRef<HTMLButtonElement>(null)
 
   // Two shapes, two renderers: a wide strip for the list and a square for the
   // tiles. Cropping the strip into a square magnifies its middle band, which made
@@ -53,7 +58,10 @@ export function PresetBox(): JSX.Element {
   useEffect(() => {
     const el = rootRef.current
     if (!el) return
-    const ro = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < NARROW))
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width
+      setNarrow((was) => (was ? w < NARROW + NARROW_HYSTERESIS : w < NARROW))
+    })
     ro.observe(el)
     return () => ro.disconnect()
   }, [])
@@ -68,6 +76,9 @@ export function PresetBox(): JSX.Element {
     if (!menu && !actions) return
     const away = (e: PointerEvent): void => {
       const t = e.target as Node
+      // The menus live in the document body now, so containment in the panel is no
+      // longer the test for "inside".
+      if ((t as Element)?.closest?.('.popover')) return
       if (!headRef.current?.contains(t) && !footRef.current?.contains(t)) closeAll()
     }
     const esc = (e: KeyboardEvent): void => {
@@ -184,6 +195,7 @@ export function PresetBox(): JSX.Element {
         {!narrow && <h2>{presets.length} brushes</h2>}
         <button
           className="sec-menu"
+          ref={headBtn}
           aria-expanded={menu}
           title="View, tile size, restore defaults"
           onClick={() => {
@@ -191,10 +203,16 @@ export function PresetBox(): JSX.Element {
             setMenu((m) => !m)
           }}
         >
-          ⋯
+          <Chevron />
         </button>
         {menu && (
-          <div className="preset-menu" role="group" aria-label="Shelf options">
+          <Popover
+            anchor={headBtn}
+            placement="below-right"
+            onClose={closeAll}
+            className="preset-menu"
+            label="Shelf options"
+          >
             <div className="preset-menu-row">
               <button
                 className="btn"
@@ -226,7 +244,7 @@ export function PresetBox(): JSX.Element {
             <button className="btn" onClick={restoreDefaults}>
               Restore default brushes
             </button>
-          </div>
+          </Popover>
         )}
       </div>
 
@@ -296,6 +314,7 @@ export function PresetBox(): JSX.Element {
           <>
             <button
               className="mini"
+              ref={footBtn}
               aria-expanded={actions}
               title="Brush actions"
               onClick={() => {
@@ -304,10 +323,16 @@ export function PresetBox(): JSX.Element {
                 setActions((a) => !a)
               }}
             >
-              ⋯
+              <Chevron />
             </button>
             {actions && (
-              <div className="preset-menu up" role="group" aria-label="Brush actions">
+              <Popover
+                anchor={footBtn}
+                placement="above-left"
+                onClose={closeAll}
+                className="preset-menu"
+                label="Brush actions"
+              >
                 <button className="btn" onClick={addPlain}>
                   New brush
                 </button>
@@ -327,7 +352,7 @@ export function PresetBox(): JSX.Element {
                 >
                   {armed ? 'Really delete?' : 'Delete brush'}
                 </button>
-              </div>
+              </Popover>
             )}
           </>
         ) : (
