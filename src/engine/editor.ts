@@ -593,6 +593,29 @@ export class Editor {
   /** Called with each raw sample while profiling, for the trail. */
   onProfileSample: ((p: StrokePoint, phase: 'down' | 'move' | 'up') => void) | null = null
 
+  /**
+   * Record the pen while it hovers, without it ever touching the glass.
+   *
+   * Set by the profiler for the hand-tremor tests, where the whole point is to measure the
+   * hand with the tablet's contact behaviour taken out of it. A hovering pen starts no
+   * stroke, so these samples would otherwise be thrown away.
+   */
+  hoverCapture = false
+
+  captureHover(p: StrokePoint): void {
+    if (!this.hoverCapture) return
+    if (!this.recorder.recording) this.recorder.begin(p, this.camera.scale)
+    else this.recorder.extend(p)
+    this.onProfileSample?.(p, 'move')
+  }
+
+  /** Close a hover recording and tell the UI, the way endStroke does for a contact test. */
+  endHoverCapture(): void {
+    if (!this.recorder.recording) return
+    this.recorder.end([])
+    this.ui.emit()
+  }
+
   beginStroke(p: StrokePoint, erasing: boolean): void {
     if (this.profiling) {
       this.recorder.begin(p, this.camera.scale)

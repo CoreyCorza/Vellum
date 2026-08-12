@@ -68,12 +68,18 @@ const TESTS: Test[] = [
 /** Long enough to watch a whole slow pass appear, short enough not to accumulate. */
 const FADE_PER_SECOND = 0.55
 
+/** How long a hover hold records for once the countdown finishes. */
+const HOLD_SECONDS = 10
+
 export function ProfilerStage({ onClose }: { onClose: () => void }): JSX.Element {
   const editor = useEditorState()
   const [test, setTest] = useState<Test>(TESTS[0])
   const [shown, setShown] = useState<Report | null>(null)
   const [live, setLive] = useState(0)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const [countdown, setCountdown] = useState<number | null>(null)
+  const countdownRef = useRef<number | null>(null)
+  countdownRef.current = countdown
   const trail = useRef<{ x: number; y: number }[]>([])
   const lastFade = useRef(0)
 
@@ -126,49 +132,63 @@ export function ProfilerStage({ onClose }: { onClose: () => void }): JSX.Element
     setLive(0)
   }, [captureCount, editor])
 
-  // Hover tests never touch the glass, so no stroke ever begins and nothing above sees
-  // them. Read them straight off the stage instead.
+  /**
+   * Hover tests: a countdown, then a fixed window that stops on its own.
+   *
+   * The first version toggled on the space bar, which recorded everything between the two
+   * presses — including moving the pen over to the keyboard and back. A ten second hold came
+   * out as a 1586 px line, because most of what got recorded was the journey. A countdown
+   * gives you time to get settled and the fixed window ends without you having to reach for
+   * anything.
+   */
   useEffect(() => {
     if (test.contact) return
-    // On window, not on the stage: the stage deliberately does not take pointer events, so
-    // that contact tests reach the editor underneath it.
-    let recording = false
-    const move = (e: PointerEvent): void => {
-      if (!recording) return
-      const p: StrokePoint = {
-        x: e.clientX, y: e.clientY, pressure: 0, tilt: 0, twist: 0, t: e.timeStamp
-      }
-      editor.recorder.extend(p)
-      trail.current.push({ x: e.clientX, y: e.clientY })
-      setLive(editor.recorder.currentSampleCount)
+    let cancelled = false
+    let timers: ReturnType<typeof setTimeout>[] = []
+
+    const finish = (): void => {
+      editor.hoverCapture = false
+      editor.endHoverCapture()
+      setCountdown(null)
     }
-    const start = (): void => {
-      if (recording) return
-      recording = true
+
+    const begin = (): void => {
+      if (editor.hoverCapture || cancelled) return
       trail.current = []
-      editor.recorder.begin(
-        { x: 0, y: 0, pressure: 0, tilt: 0, twist: 0, t: performance.now() },
-        1
-      )
+      let n = 3
+      setCountdown(n)
+      const tick = (): void => {
+        if (cancelled) return
+        n -= 1
+        if (n > 0) {
+          setCountdown(n)
+          timers.push(setTimeout(tick, 1000))
+          return
+        }
+        setCountdown(0)
+        editor.hoverCapture = true
+        timers.push(
+          setTimeout(() => {
+            if (!cancelled) finish()
+          }, HOLD_SECONDS * 1000)
+        )
+      }
+      timers.push(setTimeout(tick, 1000))
     }
-    const stop = (): void => {
-      if (!recording) return
-      recording = false
-      editor.recorder.end([])
-      setLive(0)
-    }
+
     const key = (e: KeyboardEvent): void => {
       if (e.code !== 'Space') return
       e.preventDefault()
-      if (recording) stop()
-      else start()
+      if (editor.hoverCapture || countdownRef.current !== null) finish()
+      else begin()
     }
-    window.addEventListener('pointermove', move)
     window.addEventListener('keydown', key)
     return () => {
-      window.removeEventListener('pointermove', move)
-      window.removeEventListener('keydown', key)
-      stop()
+      cancelled = true
+      for (const t of timers) clearTimeout(t)
+      timers = []
+      editor.hoverCapture = false
+      editor.endHoverCapture()
     }
   }, [editor, test])
 
@@ -258,10 +278,14 @@ export function ProfilerStage({ onClose }: { onClose: () => void }): JSX.Element
         <p className="pstage-how">{test.how}</p>
         {!test.contact && (
           <p className="pstage-how pstage-key">
-            Press <kbd>space</kbd> to start and stop recording, since the pen never touches
-            the glass.
+            Hold the pen where you want it, press <kbd>space</kbd>, and keep still. It counts
+            down from three and then records for {HOLD_SECONDS} seconds on its own.
           </p>
         )}
+        {countdown !== null && countdown > 0 && (
+          <p className="pstage-count">get still… {countdown}</p>
+        )}
+        {countdown === 0 && <p className="pstage-count recording">hold — recording</p>}
         {live > 0 && <p className="pstage-live">recording — {live} samples</p>}
 
         <div className="pstage-list">

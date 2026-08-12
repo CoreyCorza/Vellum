@@ -172,6 +172,17 @@ export function bindWintabInput(
       } else if (editor.sizeScrubActive) {
         // key-driven scrub (hold S) tracks a hovering pen too
         editor.updateSizeScrub(lx)
+      } else if (editor.hoverCapture) {
+        /*
+         * A hovering pen, for the profiler's hand-tremor tests.
+         *
+         * Has to come from here rather than from DOM pointer events. With Windows Ink off
+         * the browser only sees a mouse-emulated hover: the first attempt recorded 11
+         * samples a second in whole pixels, which cannot show a tremor of a fraction of a
+         * pixel. Wintab reports proximity packets at the full rate and at the digitiser's
+         * own resolution, which is the only version of this measurement worth taking.
+         */
+        editor.captureHover(toStrokePoint(s, lx, ly))
       }
     }
     editor.invalidate()
