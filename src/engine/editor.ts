@@ -632,6 +632,16 @@ export class Editor {
       // No stabilised path to compare against, which is the point: a profiler recording
       // is of the tablet, not of the brush engine.
       this.recorder.end([])
+      /*
+       * Tell the UI. Without this the finished recording sat in the list unnoticed until
+       * some other interaction happened to cause a render, which looked exactly like the
+       * recording having been thrown away.
+       *
+       * ui.emit, not invalidate: invalidate redraws the canvas and is deliberately kept off
+       * React's channel so a pen reporting hundreds of times a second cannot schedule
+       * hundreds of renders. This fires once, when a recording ends.
+       */
+      this.ui.emit()
       return
     }
     if (!this.strokes.active) return

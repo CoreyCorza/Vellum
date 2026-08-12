@@ -1987,3 +1987,23 @@ button.btn[aria-pressed='true'] {
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
+
+/*
+ * While the profiler has the screen, the rest of the interface has to be intangible as
+ * well as hidden.
+ *
+ * The stage is opaque and covers everything, so the panels cannot be seen — but they were
+ * still catching the pen, and a ruler pass across the full width would run straight over a
+ * brush thumbnail that is invisible underneath. Which defeats the whole reason for having a
+ * full screen mode. The Wintab path fails the same way for a different reason: it asks what
+ * is topmost at the pen's position and ignores anything that is not the canvas.
+ *
+ * Written against the document's shape rather than a list of class names, so anything added
+ * to the workspace later is covered without having to remember this rule exists. The
+ * stage's own controls come back with pointer-events: auto further up.
+ */
+body.profiling #menubar,
+body.profiling #status,
+body.profiling #workspace > *:not(#stage):not(.pstage) {
+  pointer-events: none;
+}

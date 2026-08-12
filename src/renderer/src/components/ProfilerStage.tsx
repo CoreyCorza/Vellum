@@ -77,18 +77,20 @@ export function ProfilerStage({ onClose }: { onClose: () => void }): JSX.Element
   const trail = useRef<{ x: number; y: number }[]>([])
   const lastFade = useRef(0)
 
-  // Take over the pen for as long as this is open, and put it back on the way out even if
-  // that happens through an unmount rather than the button.
+  /**
+   * Take over the pen for as long as this is open, and put it back on the way out.
+   *
+   * Set up once, keyed only on the editor. An earlier version keyed this on the selected
+   * test as well, which meant picking a test tore the whole thing down and rebuilt only
+   * half of it: the trail hook was cleared and never reinstalled, so from the first click
+   * onward nothing was drawn and the sample counter stayed at zero. The test being run is
+   * read from a ref precisely so that changing it does not disturb any of this.
+   */
   useEffect(() => {
+    // Makes the rest of the interface intangible as well as covered — see the body.profiling
+    // rules. Without it an invisible panel still catches the pen mid-ruler-pass.
+    document.body.classList.add('profiling')
     editor.profiling = true
-    editor.recorder.label = test.id
-    return () => {
-      editor.profiling = false
-      editor.onProfileSample = null
-    }
-  }, [editor, test.id])
-
-  useEffect(() => {
     editor.onProfileSample = (p: StrokePoint, phase): void => {
       if (phase === 'down') trail.current = []
       const c = editor.camera.docToScreen(p.x, p.y)
@@ -97,9 +99,32 @@ export function ProfilerStage({ onClose }: { onClose: () => void }): JSX.Element
       setLive(editor.recorder.currentSampleCount)
     }
     return () => {
+      document.body.classList.remove('profiling')
+      editor.profiling = false
       editor.onProfileSample = null
     }
   }, [editor])
+
+  useEffect(() => {
+    editor.recorder.label = test.id
+  }, [editor, test.id])
+
+  /**
+   * Show a recording's numbers the moment it finishes.
+   *
+   * Without this the row appeared in the list but nothing else happened, so the only way to
+   * find out whether a test had worked was to click something — which read as the recording
+   * not having been saved at all.
+   */
+  const captureCount = editor.recorder.count
+  useEffect(() => {
+    if (captureCount === 0) return
+    const c = editor.recorder.last()
+    if (!c) return
+    const t = TESTS.find((x) => x.id === c.label)
+    setShown(report(c, { stationary: t?.held }))
+    setLive(0)
+  }, [captureCount, editor])
 
   // Hover tests never touch the glass, so no stroke ever begins and nothing above sees
   // them. Read them straight off the stage instead.
