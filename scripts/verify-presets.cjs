@@ -123,22 +123,27 @@ const SCRIPT = `(() => {
     // The footer collapses to a menu when the panel is narrow, and the panel's
     // width is remembered between runs — so find the delete control wherever it
     // currently lives rather than assuming a layout.
+    // The delete control is either a button in the footer, or an item in the
+    // footer's menu when the panel is narrow — and that menu is portalled to the
+    // document body, so it is not inside .preset-actions at all.
     const findDelete = async () => {
-      let d = document.querySelector('.preset-actions .danger')
+      const look = () =>
+        document.querySelector('.preset-actions .danger, .popover .danger')
+      let d = look()
       if (d) return d
       const opener = document.querySelector('.preset-actions .mini')
       if (opener) {
         opener.click()
-        await sleep(160)
+        await sleep(200)
       }
-      return document.querySelector('.preset-actions .danger')
+      return look()
     }
     const del = await findDelete()
     R.deleteButtonExists = !!del
     if (del) del.click()
     await sleep(160)
     R.oneClickDoesNotDelete = ed.presets.length === before
-    R.oneClickArms = !!document.querySelector('.preset-actions .danger.armed')
+    R.oneClickArms = !!document.querySelector('.preset-actions .danger.armed, .popover .danger.armed')
     const del2 = await findDelete()
     if (del2) del2.click()
     await sleep(160)
