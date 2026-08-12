@@ -253,31 +253,34 @@ const SCRIPT = `(async () => {
   // Toggling a pen dynamic must not move anything. The curves used to be added and
   // removed, so every tick shifted the controls below and left a hole at the bottom
   // of the panel.
-  const settingsBody = document.querySelector('#brush-panel .floating-panel-body')
-  if (settingsBody) {
-    // The Stroke category's header is the marker: it sits below the curves, so if
-    // toggling a dynamic changes anything's height it moves. Settings live in
-    // collapsible categories now, so Pen dynamics has to be open for the curves to
-    // exist at all.
-    const strokeHead = () =>
-      [...document.querySelectorAll('.sect-title')].find((t) => t.textContent.trim() === 'Stroke')
-    const dynHead = [...document.querySelectorAll('.sect-head')].find((h) =>
-      h.textContent.includes('Pen dynamics')
-    )
-    if (dynHead && dynHead.getAttribute('aria-expanded') === 'false') dynHead.click()
-    await sleep(300)
+  // Curves stay present and dim when their dynamic is off, rather than being added
+  // and removed — which used to move every control below them. Measured inside the
+  // Pen dynamics pane, using the Min size slider that sits below all three curves as
+  // the marker.
+  const dynTab = [...document.querySelectorAll('.cat-item')].find((i) =>
+    i.textContent.includes('Pen dynamics')
+  )
+  if (dynTab) {
+    dynTab.click()
+    await sleep(260)
+    const pane = document.querySelector('.cat-pane')
+    const marker = () =>
+      [...document.querySelectorAll('.cat-pane-body .sl')].find(
+        (n) => n.getAttribute('aria-label') === 'Min size'
+      )
+
     ed.setBrush({ pressureToSize: true, pressureToFlow: true, pressureToOpacity: true })
-    await sleep(240)
-    const onY = Math.round(strokeHead().getBoundingClientRect().top)
-    const onH = settingsBody.scrollHeight
+    await sleep(260)
+    const onY = Math.round(marker().getBoundingClientRect().top)
+    const onH = pane.scrollHeight
     const onCurves = document.querySelectorAll('.curve-editor').length
 
     ed.setBrush({ pressureToSize: false, pressureToFlow: false, pressureToOpacity: false })
-    await sleep(240)
+    await sleep(260)
     R.curvesStayPresent = document.querySelectorAll('.curve-editor').length === onCurves
     R.curvesDimWhenOff = document.querySelectorAll('.curve-editor.disabled').length === onCurves
     R.togglingDoesNotShiftLayout =
-      Math.round(strokeHead().getBoundingClientRect().top) === onY && settingsBody.scrollHeight === onH
+      Math.round(marker().getBoundingClientRect().top) === onY && pane.scrollHeight === onH
 
     const offCanvas = document.querySelector('.curve-editor.disabled canvas')
     R.disabledCurveIgnoresInput = offCanvas
@@ -294,31 +297,44 @@ const SCRIPT = `(async () => {
       getComputedStyle(box).backgroundColor !== 'rgba(0, 0, 0, 0)'
     : false
 
-  // Settings are grouped into collapsible categories, because stacking every
-  // control in one column stopped scaling the moment there was more than a
-  // handful. A collapsed header must still report its values — collapsing is to
-  // save scrolling, not to hide what the brush is doing.
-  const heads = () => [...document.querySelectorAll('.sect-head')]
-  R.hasCategories = heads().length >= 3
-  ed.setBrush({ pressureToSize: true, pressureToOpacity: true, stabilise: 0.2 })
-  heads()
-    .filter((h) => h.getAttribute('aria-expanded') === 'true')
-    .forEach((h) => h.click())
-  await sleep(360)
-  const settings = document.querySelector('#brush-panel .floating-panel-body')
-  const shutH = settings.scrollHeight
-  R.collapsedHeadersShowValues = heads()
-    .filter((h) => h.getAttribute('aria-expanded') === 'false')
-    .every((h) => {
-      const sum = h.querySelector('.sect-summary')
-      return !!sum && sum.textContent.trim().length > 0
-    })
+  // Settings are grouped into categories: a fixed list beside a pane. Collapsible
+  // sections were tried and rejected because expanding one moved everything below
+  // it. The property that matters is therefore geometric — switching category must
+  // not move the list or resize the pane.
+  const items = () => [...document.querySelectorAll('.cat-item')]
+  R.hasCategories = items().length >= 5
+  const listBox = () => document.querySelector('.cat-list').getBoundingClientRect()
+  const paneBox = () => document.querySelector('.cat-pane').getBoundingClientRect()
+  const firstList = listBox()
+  const firstPane = paneBox()
+  let steady = true
+  for (const it of items()) {
+    it.click()
+    await sleep(150)
+    const l = listBox()
+    const pn = paneBox()
+    if (
+      Math.round(l.height) !== Math.round(firstList.height) ||
+      Math.round(l.width) !== Math.round(firstList.width) ||
+      Math.round(pn.top) !== Math.round(firstPane.top) ||
+      Math.round(pn.height) !== Math.round(firstPane.height)
+    ) {
+      steady = false
+    }
+  }
+  R.switchingCategoryMovesNothing = steady
 
-  heads()
-    .filter((h) => h.getAttribute('aria-expanded') === 'false')
-    .forEach((h) => h.click())
-  await sleep(360)
-  R.expandingCostsHeight = settings.scrollHeight > shutH * 1.5
+  // Only one pane's controls exist at a time, which is what keeps the panel a fixed
+  // size however many categories get added.
+  R.onePaneAtATime = document.querySelectorAll('.cat-pane-body').length === 1
+
+  // Sketched categories are inert, so nothing looks live that is not.
+  ;[...items()].find((i) => i.textContent.includes('Texture')).click()
+  await sleep(200)
+  const plannedBody = document.querySelector('.cat-pane-body.planned')
+  R.plannedCategoryIsInert = !!plannedBody && getComputedStyle(plannedBody).pointerEvents === 'none'
+  ;[...items()].find((i) => i.textContent.includes('Brush')).click()
+  await sleep(150)
 
   // A live stroke of the current brush, since with categories closed you can only
   // see a few settings at once and something has to show the combined result.

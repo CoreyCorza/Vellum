@@ -5,9 +5,9 @@ import { LayersPanel } from './LayersPanel'
 import { FloatingPanel } from './FloatingPanel'
 import { CurveEditor } from './CurveEditor'
 import { PresetBox } from './PresetBox'
-import { Section } from './Section'
 import { StrokePreview } from './StrokePreview'
-import { PlannedSections } from './PlannedSections'
+import { BrushCategories, type BrushCategory } from './BrushCategories'
+import { RotationBody, ScatterBody, TextureBody, TipBody } from './PlannedSections'
 
 const pct = (v: number): string => `${Math.round(v)}%`
 
@@ -15,15 +15,6 @@ export function BrushPanel(): JSX.Element {
   const editor = useEditorState()
   const b = editor.brush
   const selected = editor.presets.find((p) => p.id === editor.activePresetId)
-
-  // Collapsed headers report VALUES, not descriptions — the point of collapsing is
-  // to stop scrolling, not to stop knowing.
-  const dynamicsOn = [
-    b.pressureToSize && 'size',
-    b.pressureToFlow && 'flow',
-    b.pressureToOpacity && 'opacity',
-    b.tiltToSize && 'tilt'
-  ].filter(Boolean) as string[]
 
   const check = (
     id: string,
@@ -40,6 +31,171 @@ export function BrushPanel(): JSX.Element {
       {label}
     </label>
   )
+
+  const anyDynamic =
+    b.pressureToSize || b.pressureToFlow || b.pressureToOpacity || b.tiltToSize
+
+  /**
+   * Categories as data, so adding one is a line here rather than a restructure —
+   * which is what the brush engine work is going to need repeatedly.
+   */
+  const categories: BrushCategory[] = [
+    {
+      id: 'brush',
+      label: 'Brush',
+      body: (
+        <>
+          <Slider
+            label="Size"
+            value={b.size}
+            min={1}
+            max={400}
+            gamma={2.4}
+            step={0.1}
+            defaultValue={34}
+            format={(v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} px`}
+            onChange={(v) => editor.setBrush({ size: v })}
+            onScrubStart={() => editor.showBrushPreview()}
+            onScrubEnd={() => editor.hideBrushPreview()}
+          />
+          <Slider
+            label="Hardness"
+            value={b.hardness * 100}
+            min={0}
+            max={100}
+            step={1}
+            defaultValue={55}
+            format={pct}
+            onChange={(v) => editor.setBrush({ hardness: v / 100 })}
+            onScrubStart={() => editor.showBrushPreview()}
+            onScrubEnd={() => editor.hideBrushPreview()}
+          />
+          <Slider
+            label="Opacity"
+            value={b.opacity * 100}
+            min={1}
+            max={100}
+            step={1}
+            defaultValue={100}
+            format={pct}
+            onChange={(v) => editor.setBrush({ opacity: v / 100 })}
+            onScrubStart={() => editor.showBrushPreview()}
+            onScrubEnd={() => editor.hideBrushPreview()}
+          />
+          <Slider
+            label="Flow"
+            value={b.flow * 100}
+            min={1}
+            max={100}
+            gamma={1.7}
+            step={1}
+            defaultValue={55}
+            format={pct}
+            onChange={(v) => editor.setBrush({ flow: v / 100 })}
+          />
+          <Slider
+            label="Spacing"
+            value={b.spacing * 100}
+            min={1}
+            max={50}
+            gamma={1.6}
+            step={1}
+            defaultValue={6}
+            format={pct}
+            onChange={(v) => editor.setBrush({ spacing: v / 100 })}
+          />
+        </>
+      )
+    },
+    { id: 'tip', label: 'Brush tip', planned: true, body: <TipBody /> },
+    { id: 'rotation', label: 'Rotation', planned: true, body: <RotationBody /> },
+    { id: 'texture', label: 'Texture', planned: true, body: <TextureBody /> },
+    { id: 'scatter', label: 'Scatter', planned: true, body: <ScatterBody /> },
+    {
+      id: 'dynamics',
+      label: 'Pen dynamics',
+      active: anyDynamic,
+      body: (
+        <>
+          {check('d-size', 'Pressure → size', 'pressureToSize')}
+          {/* Curves are always present, dimmed when their dynamic is off. Removing
+              them shifted every control below on each tick; a panel worked in
+              continuously should not move under the hand. */}
+          <CurveEditor
+            value={b.sizeCurve}
+            onChange={(sizeCurve) => editor.setBrush({ sizeCurve })}
+            disabled={!b.pressureToSize}
+          />
+
+          {check('d-flow', 'Pressure → flow', 'pressureToFlow')}
+          <CurveEditor
+            value={b.flowCurve}
+            onChange={(flowCurve) => editor.setBrush({ flowCurve })}
+            disabled={!b.pressureToFlow}
+          />
+
+          {check('d-opac', 'Pressure → opacity', 'pressureToOpacity')}
+          <CurveEditor
+            value={b.opacityCurve}
+            onChange={(opacityCurve) => editor.setBrush({ opacityCurve })}
+            disabled={!b.pressureToOpacity}
+          />
+
+          <Slider
+            label="Min size"
+            value={b.minSize * 100}
+            min={0}
+            max={100}
+            step={1}
+            defaultValue={8}
+            format={pct}
+            onChange={(v) => editor.setBrush({ minSize: v / 100 })}
+          />
+          {check('d-tilt', 'Tilt → size (flatten)', 'tiltToSize')}
+        </>
+      )
+    },
+    {
+      id: 'stroke',
+      label: 'Stroke',
+      active: b.stabilise > 0 || b.speedToSize,
+      body: (
+        <>
+          <Slider
+            label="Stabiliser"
+            value={b.stabilise * 100}
+            min={0}
+            max={95}
+            step={1}
+            defaultValue={35}
+            format={pct}
+            onChange={(v) => editor.setBrush({ stabilise: v / 100 })}
+          />
+          <Slider
+            label="Ease off at speed"
+            value={b.stabiliseSpeedAdapt * 100}
+            min={0}
+            max={100}
+            step={1}
+            defaultValue={60}
+            format={(v) => (v === 0 ? 'off' : pct(v))}
+            onChange={(v) => editor.setBrush({ stabiliseSpeedAdapt: v / 100 })}
+          />
+          <Slider
+            label="Curve smoothing"
+            value={b.pathSmoothness * 100}
+            min={0}
+            max={100}
+            step={1}
+            defaultValue={100}
+            format={(v) => (v === 0 ? 'polyline' : pct(v))}
+            onChange={(v) => editor.setBrush({ pathSmoothness: v / 100 })}
+          />
+          {check('d-speed', 'Speed → size (taper)', 'speedToSize')}
+        </>
+      )
+    }
+  ]
 
   return (
     <>
@@ -66,106 +222,11 @@ export function BrushPanel(): JSX.Element {
         }
         initialTop={10}
         initialRight={10}
-        initialWidth={430}
-        initialHeight={720}
+        initialWidth={440}
+        initialHeight={560}
       >
-      <StrokePreview />
-
-      <Section
-        id="brush"
-        title="Brush"
-        defaultOpen
-        summary={`${b.size < 10 ? b.size.toFixed(1) : Math.round(b.size)} px · ${Math.round(b.hardness * 100)}%`}
-      >
-        <Slider
-          label="Size" value={b.size} min={1} max={400} gamma={2.4} step={0.1} defaultValue={34}
-          format={(v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} px`}
-          onChange={(v) => editor.setBrush({ size: v })}
-          onScrubStart={() => editor.showBrushPreview()}
-          onScrubEnd={() => editor.hideBrushPreview()}
-        />
-        <Slider
-          label="Hardness" value={b.hardness * 100} min={0} max={100} step={1} defaultValue={55}
-          format={pct} onChange={(v) => editor.setBrush({ hardness: v / 100 })}
-          onScrubStart={() => editor.showBrushPreview()}
-          onScrubEnd={() => editor.hideBrushPreview()}
-        />
-        <Slider
-          label="Opacity" value={b.opacity * 100} min={1} max={100} step={1} defaultValue={100}
-          format={pct} onChange={(v) => editor.setBrush({ opacity: v / 100 })}
-          onScrubStart={() => editor.showBrushPreview()}
-          onScrubEnd={() => editor.hideBrushPreview()}
-        />
-        <Slider
-          label="Flow" value={b.flow * 100} min={1} max={100} gamma={1.7} step={1} defaultValue={55}
-          format={pct} onChange={(v) => editor.setBrush({ flow: v / 100 })}
-        />
-        <Slider
-          label="Spacing" value={b.spacing * 100} min={1} max={50} gamma={1.6} step={1} defaultValue={6}
-          format={pct} onChange={(v) => editor.setBrush({ spacing: v / 100 })}
-        />
-      </Section>
-
-      <PlannedSections />
-
-      <Section
-        id="dynamics"
-        title="Pen dynamics"
-        summary={dynamicsOn.length ? dynamicsOn.join(', ') : 'off'}
-      >
-        {check('d-size', 'Pressure → size', 'pressureToSize')}
-        {/* Curves are always present, dimmed when their dynamic is off. Removing
-            them shifted every control below on each tick and left a hole at the
-            bottom of the panel; a panel you work in continuously should not move
-            under you. */}
-        <CurveEditor
-          value={b.sizeCurve}
-          onChange={(sizeCurve) => editor.setBrush({ sizeCurve })}
-          disabled={!b.pressureToSize}
-        />
-
-        {check('d-flow', 'Pressure → flow', 'pressureToFlow')}
-        <CurveEditor
-          value={b.flowCurve}
-          onChange={(flowCurve) => editor.setBrush({ flowCurve })}
-          disabled={!b.pressureToFlow}
-        />
-
-        {check('d-opac', 'Pressure → opacity', 'pressureToOpacity')}
-        <CurveEditor
-          value={b.opacityCurve}
-          onChange={(opacityCurve) => editor.setBrush({ opacityCurve })}
-          disabled={!b.pressureToOpacity}
-        />
-
-        <Slider
-          label="Min size" value={b.minSize * 100} min={0} max={100} step={1} defaultValue={8}
-          format={pct} onChange={(v) => editor.setBrush({ minSize: v / 100 })}
-        />
-        {check('d-tilt', 'Tilt → size (flatten)', 'tiltToSize')}
-      </Section>
-
-      <Section
-        id="stroke"
-        title="Stroke"
-        summary={b.stabilise > 0 ? `stabiliser ${Math.round(b.stabilise * 100)}%` : 'no stabiliser'}
-      >
-        <Slider
-          label="Stabiliser" value={b.stabilise * 100} min={0} max={95} step={1} defaultValue={35}
-          format={pct} onChange={(v) => editor.setBrush({ stabilise: v / 100 })}
-        />
-        <Slider
-          label="Ease off at speed" value={b.stabiliseSpeedAdapt * 100} min={0} max={100} step={1}
-          defaultValue={60} format={(v) => (v === 0 ? 'off' : pct(v))}
-          onChange={(v) => editor.setBrush({ stabiliseSpeedAdapt: v / 100 })}
-        />
-        <Slider
-          label="Curve smoothing" value={b.pathSmoothness * 100} min={0} max={100} step={1}
-          defaultValue={100} format={(v) => (v === 0 ? 'polyline' : pct(v))}
-          onChange={(v) => editor.setBrush({ pathSmoothness: v / 100 })}
-        />
-        {check('d-speed', 'Speed → size (taper)', 'speedToSize')}
-      </Section>
+        <StrokePreview />
+        <BrushCategories categories={categories} />
       </FloatingPanel>
 
       <PresetBox />
@@ -189,9 +250,15 @@ export function BrushPanel(): JSX.Element {
         <div className="sec">
           <h2>Layer fill</h2>
           <div className="btn-row">
-            <button className="btn" onClick={() => editor.clearLayer(undefined, '#ffffff')}>White</button>
-            <button className="btn" onClick={() => editor.clearLayer(undefined, '#f2ece0')}>Paper</button>
-            <button className="btn" onClick={() => editor.clearLayer()}>Clear</button>
+            <button className="btn" onClick={() => editor.clearLayer(undefined, '#ffffff')}>
+              White
+            </button>
+            <button className="btn" onClick={() => editor.clearLayer(undefined, '#f2ece0')}>
+              Paper
+            </button>
+            <button className="btn" onClick={() => editor.clearLayer()}>
+              Clear
+            </button>
           </div>
         </div>
       </FloatingPanel>

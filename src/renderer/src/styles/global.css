@@ -1604,76 +1604,117 @@ button.btn[aria-pressed='true'] {
   pointer-events: none;
 }
 
-/* --- Collapsible setting categories ----------------------------------------
-   The alternative was Photoshop's category sidebar, which the three big apps all
-   use and can all afford because they are wide dialogues. At 236px a sidebar would
-   leave about 140px for the controls. Stacking and collapsing costs no width, and a
-   collapsed header still reports its values, so the panel answers "what is this
-   brush doing" without a click. */
-.sect {
-  border-bottom: 1px solid var(--line);
-}
-.sect:last-child {
-  border-bottom: 0;
+/* --- Brush setting categories ----------------------------------------------
+   A fixed list beside a pane, the way Photoshop and Clip Studio do it.
+
+   Collapsible sections were tried first and were wrong for this panel: expanding one
+   moves everything below it, so a control is never where it was a moment ago, and
+   the bottom of the panel ends up as a hole. Nothing here changes size. The list is
+   the same height whatever is selected; the pane swaps its contents inside a region
+   whose size the user set by dragging the panel edge.
+
+   The pane will sometimes have space at the bottom. That is a fixed area rather than
+   a shifting one, which is the entire difference. */
+.cat {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
 }
 
-.sect-head {
+.cat-list {
+  flex: none;
+  width: 116px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-right: 8px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.cat-item {
   display: flex;
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 6px 6px 6px 4px;
+  padding: 4px 6px;
   border: 0;
+  border-radius: 4px;
   background: none;
-  color: var(--fg-faint);
+  color: var(--fg-dim);
   font: inherit;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  font-size: 11px;
   text-align: left;
   cursor: pointer;
 }
-.sect-head:hover {
+.cat-item:hover {
+  background: #ffffff10;
+  color: var(--fg-faint);
+}
+.cat-item[aria-selected='true'] {
+  background: var(--panel-2);
   color: #fff;
 }
-.sect-head:focus-visible {
+.cat-item:focus-visible {
   outline: 1px solid var(--accent);
   outline-offset: -1px;
-  border-radius: 3px;
+}
+.cat-item.planned .cat-name {
+  opacity: 0.55;
 }
 
-.sect-arrow {
-  flex: none;
-  opacity: 0.6;
-  transition: transform 110ms ease;
-}
-.sect.open .sect-arrow {
-  transform: rotate(90deg);
-}
-
-.sect-title {
-  flex: none;
-}
-
-/* The values, right-aligned and in sentence case so they read as data rather than
-   as a second heading. */
-.sect-summary {
+.cat-name {
   flex: 1;
-  text-align: right;
-  color: var(--fg-dim);
-  font-weight: 400;
-  font-size: 10px;
-  letter-spacing: 0;
-  text-transform: none;
-  font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.sect-body {
-  padding: 0 2px 8px;
+/* A category that is doing something. Photoshop uses a checkbox for the same job;
+   a dot says it without implying the list item is a control. */
+.cat-dot {
+  flex: none;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--differs);
+}
+
+.cat-pane {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  overflow-y: auto;
+}
+
+.cat-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--fg-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.cat-pane-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 3px 10px;
+  align-content: start;
+}
+
+/* A curve, a checkbox and a segmented row all want the full width: splitting a
+   dynamic from the curve it drives across two columns breaks the pairing. */
+.cat-pane-body > .curve-editor,
+.cat-pane-body > .chk,
+.cat-pane-body > .seg-row {
+  grid-column: 1 / -1;
 }
 
 /* --- Live stroke preview ----------------------------------------------------
@@ -1700,37 +1741,6 @@ button.btn[aria-pressed='true'] {
   }
 }
 
-/* --- Wide settings panel ----------------------------------------------------
-   Sections lay out in as many columns as the panel affords. Dragging it wide is
-   how you get a Photoshop-density panel; leaving it narrow still works, which is
-   why this is auto-fit rather than a fixed two columns. */
-.sect-body {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
-  gap: 3px 10px;
-  align-content: start;
-}
-
-/* A curve, its checkbox, and anything segmented want the full width: splitting a
-   dynamic from the curve it drives across two columns breaks the pairing. */
-.sect-body > .curve-editor,
-.sect-body > .chk,
-.sect-body > .seg-row {
-  grid-column: 1 / -1;
-}
-
-.seg-row {
-  display: flex;
-  gap: 4px;
-}
-.seg-row .btn {
-  flex: 1;
-}
-.seg-row .btn[aria-pressed='true'] {
-  background: var(--button1);
-  color: var(--accent);
-}
-
 /* --- Planned sections -------------------------------------------------------
    Sketches of the brush engine still to come. Shown so the layout can be judged at
    full size before anything is wired up, and inert so nothing pretends otherwise. */
@@ -1746,10 +1756,26 @@ button.btn[aria-pressed='true'] {
   letter-spacing: 0.08em;
   opacity: 0.75;
 }
-.sect-head:has(.sect-planned) .sect-title {
-  opacity: 0.7;
-}
-.sect-body.planned {
+.cat-pane-body.planned {
   opacity: 0.45;
   pointer-events: none;
+}
+
+.seg-row {
+  display: flex;
+  gap: 4px;
+}
+.seg-row .btn {
+  flex: 1;
+}
+.seg-row .btn[aria-pressed='true'] {
+  background: var(--button1);
+  color: var(--accent);
+}
+
+/* The settings panel's body is a column so the category layout can take the height
+   that is left after the stroke preview. */
+.floating-panel-body:has(.cat) {
+  display: flex;
+  flex-direction: column;
 }

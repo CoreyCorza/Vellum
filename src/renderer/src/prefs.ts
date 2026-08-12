@@ -25,8 +25,8 @@ export interface Prefs {
   presetTileSize: number
   /** Panels the user has closed. Absent means "never chosen", so defaults apply. */
   hiddenPanels?: string[]
-  /** Which settings categories are expanded. Absent means each uses its default. */
-  openSections?: string[]
+  /** Which brush settings category is showing. */
+  brushCategory?: string
   /** The whole shelf, since presets can now be added, renamed and deleted. */
   presets: BrushPreset[]
 }
@@ -121,9 +121,7 @@ export function loadPrefs(): Prefs {
       hiddenPanels: Array.isArray(parsed.hiddenPanels)
         ? parsed.hiddenPanels.filter((x): x is string => typeof x === 'string')
         : undefined,
-      openSections: Array.isArray(parsed.openSections)
-        ? parsed.openSections.filter((x): x is string => typeof x === 'string')
-        : undefined
+      brushCategory: typeof parsed.brushCategory === 'string' ? parsed.brushCategory : undefined
     }
   } catch {
     return { ...DEFAULT_PREFS }

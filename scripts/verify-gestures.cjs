@@ -29,6 +29,18 @@ app.whenReady().then(async () => {
   await win.loadFile(path.join(root, 'out/renderer/index.html'), { search: 'debug' })
   await new Promise((r) => setTimeout(r, 1500))
 
+  // The focus test needs the Pressure-to-size checkbox, which only exists while the
+  // Pen dynamics category is showing. Chosen through stored preferences and a reload
+  // rather than by clicking the category here: the test body is synchronous, so a
+  // click would be read back before React had re-rendered.
+  await win.webContents.executeJavaScript(
+    "(() => { const k = 'vellum.prefs';" +
+      " const p = JSON.parse(localStorage.getItem(k) || '{}');" +
+      " p.brushCategory = 'dynamics'; p.hiddenPanels = [];" +
+      " localStorage.setItem(k, JSON.stringify(p)); location.reload(); return 1 })()"
+  )
+  await new Promise((r) => setTimeout(r, 2600))
+
   const result = await win.webContents.executeJavaScript(String.raw`(() => {
     const ed = window.editor;
     const cv = document.getElementById('view');
@@ -233,12 +245,6 @@ app.whenReady().then(async () => {
     // Regression: isTextField() treated every <input> as text entry, so a
     // focused CHECKBOX made the shortcut handler bail out — space toggled the
     // box and never reached the canvas.
-    // Settings live in collapsible categories now, and Pen dynamics starts closed,
-    // so the checkbox this needs is not in the DOM until the category is opened.
-    const dynHead = [...document.querySelectorAll('.sect-head')]
-      .find((h) => h.textContent.includes('Pen dynamics'));
-    if (dynHead && dynHead.getAttribute('aria-expanded') === 'false') dynHead.click();
-
     const cb = document.getElementById('d-size');
     const F = {};
     // Named rather than silently skipped: the bare presence guard below let a
