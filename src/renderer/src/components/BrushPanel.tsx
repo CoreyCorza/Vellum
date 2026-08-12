@@ -1,18 +1,16 @@
-import { useState } from 'react'
 import { useEditorState } from '../useEditor'
 import { Slider } from './Slider'
 import { ColorPicker } from './ColorPicker'
 import { LayersPanel } from './LayersPanel'
 import { FloatingPanel } from './FloatingPanel'
 import { CurveEditor } from './CurveEditor'
-import { PRESETS } from '@engine/brush/settings'
+import { PresetBox } from './PresetBox'
 
 const pct = (v: number): string => `${Math.round(v)}%`
 
 export function BrushPanel(): JSX.Element {
   const editor = useEditorState()
   const b = editor.brush
-  const [preset, setPreset] = useState<string | null>(null)
 
   const check = (
     id: string,
@@ -33,24 +31,7 @@ export function BrushPanel(): JSX.Element {
   return (
     <>
       <FloatingPanel id="brush-panel" title="Brush" initialTop={10} initialRight={10}>
-      <div className="sec">
-        <h2>Preset</h2>
-        <div id="presets">
-          {PRESETS.map((p) => (
-            <button
-              key={p.name}
-              className="preset"
-              aria-pressed={preset === p.name}
-              onClick={() => {
-                setPreset(p.name)
-                editor.setBrush(p.settings)
-              }}
-            >
-              {p.name}
-            </button>
-          ))}
-        </div>
-      </div>
+      <PresetBox />
 
       <div className="sec">
         <h2>Brush</h2>

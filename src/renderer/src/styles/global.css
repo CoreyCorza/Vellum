@@ -1103,3 +1103,148 @@ button.btn[aria-pressed='true'] {
   border-color: #4d7fce;
   color: #9cc2ff;
 }
+
+/* --- Preset shelf -----------------------------------------------------------
+   The well is a bordered, scrolling box rather than loose buttons, so a long
+   shelf has an obvious edge and does not push the rest of the panel down. */
+.sec-menu {
+  background: none;
+  border: 0;
+  padding: 0 3px;
+  margin: 0 0 6px;
+  color: #7d7d7d;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sec-menu:hover,
+.sec-menu[aria-expanded='true'] {
+  color: var(--fg-faint);
+}
+
+.preset-menu {
+  position: absolute;
+  top: 18px;
+  right: 0;
+  z-index: 40;
+  width: 168px;
+  padding: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line-2);
+  border-radius: var(--radius);
+  box-shadow: var(--panel-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.preset-menu-row {
+  display: flex;
+  gap: 4px;
+}
+.preset-menu-row .btn {
+  flex: 1;
+}
+.preset-menu-row .btn[aria-pressed='true'] {
+  background: var(--button1);
+  color: var(--accent);
+}
+
+.sec-head {
+  position: relative;
+}
+
+.preset-well {
+  background: #2e2e2e;
+  border: 1px solid var(--line-2);
+  border-radius: 4px;
+  max-height: 216px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.preset-rows {
+  display: flex;
+  flex-direction: column;
+}
+.preset-row {
+  display: grid;
+  grid-template-columns: 72px 1fr auto;
+  align-items: center;
+  gap: 0 8px;
+  width: 100%;
+  padding: 3px 7px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.preset-row:last-child {
+  border-bottom: 0;
+}
+.preset-row:hover {
+  background: #343434;
+}
+.preset-row[aria-pressed='true'] {
+  background: #3f3f3f;
+}
+.preset-row[aria-pressed='true'] .preset-name {
+  color: var(--accent);
+}
+.preset-strip {
+  width: 72px;
+  height: 22px;
+  display: block;
+  border-radius: 2px;
+}
+.preset-name {
+  color: var(--fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.preset-size {
+  color: #7d7d7d;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.preset-tiles {
+  display: grid;
+  gap: 4px;
+  padding: 5px;
+}
+.preset-tile {
+  position: relative;
+  aspect-ratio: 1;
+  padding: 0;
+  background: #383838;
+  border: 1px solid #414141;
+  border-radius: 3px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.preset-tile:hover {
+  border-color: #5a5a5a;
+}
+.preset-tile[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+.preset-tile img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.preset-badge {
+  position: absolute;
+  inset: auto 2px 2px auto;
+  padding: 0 2px;
+  border-radius: 2px;
+  background: #00000088;
+  color: #d6d6d6;
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+}

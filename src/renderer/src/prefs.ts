@@ -19,6 +19,9 @@ export interface Prefs {
   canvasScalingMode: CanvasScalingMode
   /** The eraser's own preset. Independent of the brush, so it has to be stored. */
   eraserBrush: BrushSettings
+  /** Preset shelf: which view, and how big the tiles are in the icon view. */
+  presetView: 'list' | 'icons'
+  presetTileSize: number
 }
 
 const KEY = 'vellum.prefs'
@@ -56,7 +59,9 @@ function sanitiseBrush(raw: unknown): BrushSettings {
 export const DEFAULT_PREFS: Prefs = {
   cursorStyle: 'brush',
   canvasScalingMode: 'auto',
-  eraserBrush: { ...DEFAULT_BRUSH }
+  eraserBrush: { ...DEFAULT_BRUSH },
+  presetView: 'list',
+  presetTileSize: 48
 }
 
 export function loadPrefs(): Prefs {
@@ -75,7 +80,12 @@ export function loadPrefs(): Prefs {
       )
         ? (parsed.canvasScalingMode as CanvasScalingMode)
         : DEFAULT_PREFS.canvasScalingMode,
-      eraserBrush: sanitiseBrush(parsed.eraserBrush)
+      eraserBrush: sanitiseBrush(parsed.eraserBrush),
+      presetView: parsed.presetView === 'icons' ? 'icons' : 'list',
+      presetTileSize:
+        typeof parsed.presetTileSize === 'number' && Number.isFinite(parsed.presetTileSize)
+          ? Math.min(96, Math.max(28, parsed.presetTileSize))
+          : DEFAULT_PREFS.presetTileSize
     }
   } catch {
     return { ...DEFAULT_PREFS }

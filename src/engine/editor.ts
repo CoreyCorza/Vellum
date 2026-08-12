@@ -7,6 +7,7 @@ import { StrokeEngine } from './brush/stroke'
 import { NavDrag } from './gestures'
 import { GLStrokeRenderer } from './gl/strokeRenderer'
 import { DEFAULT_BRUSH, type BrushSettings } from './brush/settings'
+import { BUILT_IN_PRESETS, presetSettings, type BrushPreset } from './brush/presets'
 import type {
   BlendMode,
   CanvasScalingMode,
@@ -108,6 +109,35 @@ export class Editor {
   /** For persistence. */
   get eraserBrush(): BrushSettings {
     return this.eraserSettings
+  }
+
+  /**
+   * The preset shelf. Erasers sit here with the brushes, because from the user's
+   * side an eraser is a brush that takes paint off, and people keep several.
+   */
+  presets: BrushPreset[] = BUILT_IN_PRESETS.map((p) => ({ ...p }))
+  activePresetId: string | null = null
+
+  /**
+   * Load a preset. An erase preset switches you into erase mode as part of
+   * choosing it — picking "Eraser · hard" and then still painting would be absurd.
+   */
+  applyPreset(id: string): void {
+    const preset = this.presets.find((p) => p.id === id)
+    if (!preset) return
+    const settings = presetSettings(preset)
+    if (preset.erase) {
+      this.eraserSettings = { ...settings, color: this.brushSettings.color, symmetry: this.brushSettings.symmetry }
+      this.tool = 'eraser'
+    } else {
+      const keepColour = this.brushSettings.color
+      this.brushSettings = { ...settings, color: keepColour, symmetry: this.brushSettings.symmetry }
+      this.tool = 'brush'
+    }
+    this.activePresetId = id
+    this.strokes.invalidateTip()
+    this.invalidate()
+    this.ui.emit()
   }
 
   /** Restore the saved eraser preset at boot; the caller validates it. Colour
@@ -338,6 +368,11 @@ export class Editor {
 
   setBrush(patch: Partial<BrushSettings>): void {
     Object.assign(this.brush, patch)
+
+    // Hand-editing means the brush is no longer that preset. Colour and symmetry
+    // are global, so they do not count as leaving it.
+    const onlyGlobal = Object.keys(patch).every((k) => k === 'color' || k === 'symmetry')
+    if (!onlyGlobal) this.activePresetId = null
 
     // Colour and symmetry are global, as in Photoshop. An eraser has no colour,
     // so choosing one while it is selected has to set what you paint with next
