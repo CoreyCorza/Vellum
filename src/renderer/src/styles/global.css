@@ -147,6 +147,11 @@ body {
 .menu-item:disabled {
   opacity: 0.35;
 }
+.menu-label {
+  /* Takes the slack so the shortcut stays hard right and the label stays hard
+     left, whether or not this menu reserves a tick column. */
+  flex: 1;
+}
 .menu-shortcut {
   color: var(--fg-faint);
   opacity: 0.7;
@@ -1484,6 +1489,7 @@ button.btn[aria-pressed='true'] {
   display: inline-block;
   width: 10px;
   flex: none;
+  margin-right: -14px;
   color: var(--accent);
 }
 

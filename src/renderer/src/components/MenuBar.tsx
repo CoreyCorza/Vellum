@@ -157,7 +157,9 @@ export function MenuBar({
   return (
     <div id="menubar" ref={barRef}>
       <span className="menubar-brand">Vellum</span>
-      {menus.map((menu) => (
+      {menus.map((menu) => {
+        const checkable = menu.items.some((i) => i.checked !== undefined)
+        return (
         <div className="menu-root" key={menu.title}>
           <button
             className="menu-title"
@@ -189,10 +191,16 @@ export function MenuBar({
                       item.onSelect?.()
                     }}
                   >
-                    <span className="menu-tick" aria-hidden="true">
-                      {item.checked === true ? '✓' : ''}
-                    </span>
-                    <span>{item.label}</span>
+                    {/* The tick column is reserved only in menus that have
+                        something to tick. Rendering it everywhere added a third
+                        flex child to every item, and space-between then pushed the
+                        labels into the middle of File, Edit and View. */}
+                    {checkable && (
+                      <span className="menu-tick" aria-hidden="true">
+                        {item.checked === true ? '✓' : ''}
+                      </span>
+                    )}
+                    <span className="menu-label">{item.label}</span>
                     {item.shortcut && <span className="menu-shortcut">{item.shortcut}</span>}
                   </button>
                 )
@@ -200,7 +208,8 @@ export function MenuBar({
             </div>
           )}
         </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

@@ -168,6 +168,29 @@ const SCRIPT = `(async () => {
   await sleep(130)
   R.previewClosesAfterOpacityDrag = ed.brushPreview.active === false
 
+  // Menu items must line up. Adding a tick column to every menu gave each item a
+  // third flex child, and space-between then pushed the labels of File, Edit and
+  // View into the middle of the popup. The column is now reserved only where
+  // something can be ticked, and the label takes the slack in both cases.
+  const alignment = []
+  for (const name of ['File', 'Edit', 'View', 'Panels']) {
+    const btn = [...document.querySelectorAll('.menu-title')].find((b) => b.textContent.trim() === name)
+    btn.click()
+    await sleep(180)
+    const pop = document.querySelector('.menu-pop').getBoundingClientRect()
+    const items = [...document.querySelectorAll('.menu-item')]
+    const lefts = new Set(items.map((i) => Math.round(i.querySelector('.menu-label').getBoundingClientRect().left - pop.left)))
+    const rights = new Set(
+      items.filter((i) => i.querySelector('.menu-shortcut'))
+        .map((i) => Math.round(pop.right - i.querySelector('.menu-shortcut').getBoundingClientRect().right))
+    )
+    alignment.push({ name, lefts: lefts.size, rights: rights.size })
+    btn.click()
+    await sleep(120)
+  }
+  R.labelsShareALeftEdge = alignment.every((a) => a.lefts === 1)
+  R.shortcutsShareARightEdge = alignment.every((a) => a.rights <= 1)
+
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R
 })()`
