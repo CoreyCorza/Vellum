@@ -30,9 +30,7 @@ export function BrushPanel(): JSX.Element {
 
   return (
     <>
-      <FloatingPanel id="brush-panel" title="Brush" initialTop={10} initialRight={10}>
-      <PresetBox />
-
+      <FloatingPanel id="brush-panel" title="Brush Settings" initialTop={10} initialRight={10}>
       <div className="sec">
         <h2>Brush</h2>
         <Slider
@@ -111,6 +109,16 @@ export function BrushPanel(): JSX.Element {
         />
         {check('d-speed', 'Speed → size (taper)', 'speedToSize')}
       </div>
+      </FloatingPanel>
+
+      <FloatingPanel
+        id="brushes-panel"
+        title="Brushes"
+        initialTop={320}
+        initialRight={484}
+        initialHeight={320}
+      >
+        <PresetBox />
       </FloatingPanel>
 
       <FloatingPanel id="color-panel" title="Colour" initialTop={10} initialRight={240}>

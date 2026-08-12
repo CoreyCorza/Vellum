@@ -5,6 +5,7 @@ import {
   type CursorStyle
 } from '@engine/types'
 import { DEFAULT_BRUSH, type BrushSettings } from '@engine/brush/settings'
+import { BUILT_IN_PRESETS, presetSettings, type BrushPreset } from '@engine/brush/presets'
 
 /**
  * App-wide preferences.
@@ -22,6 +23,8 @@ export interface Prefs {
   /** Preset shelf: which view, and how big the tiles are in the icon view. */
   presetView: 'list' | 'icons'
   presetTileSize: number
+  /** The whole shelf, since presets can now be added, renamed and deleted. */
+  presets: BrushPreset[]
 }
 
 const KEY = 'vellum.prefs'
@@ -31,6 +34,29 @@ const KEY = 'vellum.prefs'
  * Stale or hand-edited storage must not be able to feed the dab loop something
  * the engine has no branch for.
  */
+/**
+ * A stored shelf is only accepted entry by entry. A malformed one falls back to
+ * the built-ins rather than leaving the panel empty with no way back.
+ */
+function sanitisePresets(raw: unknown): BrushPreset[] {
+  if (!Array.isArray(raw)) return DEFAULT_PREFS.presets.map((p) => ({ ...p }))
+  const out: BrushPreset[] = []
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue
+    const o = item as Record<string, unknown>
+    if (typeof o.id !== 'string' || !o.id) continue
+    if (typeof o.name !== 'string' || !o.name) continue
+    out.push({
+      id: o.id,
+      name: o.name.slice(0, 48),
+      erase: o.erase === true,
+      settings: sanitiseBrush(o.settings),
+      icon: typeof o.icon === 'string' && o.icon.startsWith('data:image/') ? o.icon : undefined
+    })
+  }
+  return out.length > 0 ? out : DEFAULT_PREFS.presets.map((p) => ({ ...p }))
+}
+
 function sanitiseBrush(raw: unknown): BrushSettings {
   const out = { ...DEFAULT_BRUSH } as unknown as Record<string, unknown>
   if (!raw || typeof raw !== 'object') return out as unknown as BrushSettings
@@ -61,7 +87,8 @@ export const DEFAULT_PREFS: Prefs = {
   canvasScalingMode: 'auto',
   eraserBrush: { ...DEFAULT_BRUSH },
   presetView: 'list',
-  presetTileSize: 48
+  presetTileSize: 48,
+  presets: BUILT_IN_PRESETS.map((p) => ({ ...p, settings: presetSettings(p) }))
 }
 
 export function loadPrefs(): Prefs {
@@ -85,7 +112,8 @@ export function loadPrefs(): Prefs {
       presetTileSize:
         typeof parsed.presetTileSize === 'number' && Number.isFinite(parsed.presetTileSize)
           ? Math.min(96, Math.max(28, parsed.presetTileSize))
-          : DEFAULT_PREFS.presetTileSize
+          : DEFAULT_PREFS.presetTileSize,
+      presets: sanitisePresets(parsed.presets)
     }
   } catch {
     return { ...DEFAULT_PREFS }

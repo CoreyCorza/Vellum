@@ -1154,10 +1154,11 @@ button.btn[aria-pressed='true'] {
 }
 
 .preset-well {
+  flex: 1;
+  min-height: 60px;
   background: #2e2e2e;
   border: 1px solid var(--line-2);
   border-radius: 4px;
-  max-height: 216px;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -1247,4 +1248,51 @@ button.btn[aria-pressed='true'] {
   color: #d6d6d6;
   font-size: 8px;
   font-variant-numeric: tabular-nums;
+}
+
+/* --- Brushes panel ----------------------------------------------------------
+   Its own panel so it can be resized: how many brushes you want in view, and how
+   big, is a matter of taste rather than something to configure. The well takes
+   whatever height is going, so dragging the panel does the whole job. */
+.floating-panel-body:has(.preset-shelf) {
+  display: flex;
+  padding: 8px;
+}
+
+.preset-shelf {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+}
+
+.preset-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.preset-actions-gap {
+  flex: 1;
+}
+.mini.danger:hover:not(:disabled) {
+  background: #6d3630;
+  color: #f2d7d2;
+}
+.mini:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.preset-rename {
+  min-width: 0;
+  background: var(--panel-2);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  color: var(--fg-faint);
+  font: inherit;
+  padding: 0 3px;
+}
+.preset-name {
+  cursor: pointer;
 }

@@ -140,6 +140,56 @@ export class Editor {
     this.ui.emit()
   }
 
+  /**
+   * Add a preset. From the current brush, or a fresh default one.
+   *
+   * Taking it from the current tool means making an eraser preset is the same
+   * gesture as making a brush preset — set up an eraser you like, press the
+   * button, it lands on the shelf as an eraser.
+   */
+  addPreset(fromCurrent: boolean): string {
+    const erase = fromCurrent ? this.tool === 'eraser' : false
+    const settings = fromCurrent ? { ...this.brush } : { ...DEFAULT_BRUSH }
+    const stem = erase ? 'Eraser' : 'Brush'
+    let n = 1
+    while (this.presets.some((p) => p.name === `${stem} ${n}`)) n++
+    const id = `user-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+    this.presets = [...this.presets, { id, name: `${stem} ${n}`, erase, settings }]
+    this.activePresetId = id
+    this.ui.emit()
+    return id
+  }
+
+  deletePreset(id: string): void {
+    this.presets = this.presets.filter((p) => p.id !== id)
+    if (this.activePresetId === id) this.activePresetId = null
+    this.ui.emit()
+  }
+
+  renamePreset(id: string, name: string): void {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    this.presets = this.presets.map((p) => (p.id === id ? { ...p, name: trimmed } : p))
+    this.ui.emit()
+  }
+
+  /** Overwrite a preset with whatever the brush is set to now. */
+  updatePresetFromBrush(id: string): void {
+    const settings = { ...this.brush }
+    this.presets = this.presets.map((p) =>
+      p.id === id ? { ...p, erase: this.tool === 'eraser', settings } : p
+    )
+    this.activePresetId = id
+    this.ui.emit()
+  }
+
+  /** Restore the saved shelf at boot; the caller validates it. */
+  restorePresets(list: BrushPreset[]): void {
+    if (list.length === 0) return
+    this.presets = list.map((p) => ({ ...p }))
+    this.ui.emit()
+  }
+
   /** Restore the saved eraser preset at boot; the caller validates it. Colour
    *  and symmetry are global, so they are not taken from storage here. */
   restoreEraserBrush(saved: BrushSettings): void {

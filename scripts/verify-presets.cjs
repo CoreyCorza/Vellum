@@ -40,10 +40,47 @@ const SCRIPT = `(() => {
   R.editClearsActive = ed.activePresetId === null
 
   // Every preview must be a real image, and they must not all be the same one.
-  const imgs = [...document.querySelectorAll('.preset-strip')]
+  // Counted across BOTH views: which one is showing is a saved preference, and a
+  // test that depends on it fails for reasons that have nothing to do with the code.
+  const imgs = [...document.querySelectorAll('.preset-strip, .preset-tile img')]
   R.everyPresetHasAStrip = imgs.length === ed.presets.length
   R.noBlankPreviews = imgs.every((i) => i.naturalWidth > 0 && i.src.startsWith('data:image/png'))
   R.previewsDiffer = new Set(imgs.map((i) => i.src)).size === imgs.length
+
+  // --- the shelf's own actions ---------------------------------------------
+  const before = ed.presets.length
+
+  // New from current settings must capture the current TOOL too, so setting up an
+  // eraser and pressing the button gives you an eraser preset.
+  ed.applyPreset('eraser-soft')
+  ed.setBrush({ size: 123 })
+  const madeId = ed.addPreset(true)
+  const made = ed.presets.find((p) => p.id === madeId)
+  R.addedFromCurrent = !!made && made.erase === true && Math.round(made.settings.size) === 123
+  R.addedGoesOnShelf = ed.presets.length === before + 1
+  R.addedIsSelected = ed.activePresetId === madeId
+
+  // A plain new brush is a default, not a copy.
+  const plainId = ed.addPreset(false)
+  const plain = ed.presets.find((p) => p.id === plainId)
+  R.plainAddIsDefault = !!plain && plain.erase === false && Math.round(plain.settings.size) !== 123
+
+  ed.renamePreset(plainId, '  Scratch  ')
+  R.renameTrims = ed.presets.find((p) => p.id === plainId).name === 'Scratch'
+  ed.renamePreset(plainId, '   ')
+  R.renameRejectsBlank = ed.presets.find((p) => p.id === plainId).name === 'Scratch'
+
+  // Overwrite takes the current settings onto the selected preset.
+  ed.applyPreset(plainId)
+  ed.setBrush({ size: 77 })
+  ed.updatePresetFromBrush(plainId)
+  R.overwriteTakesSettings =
+    Math.round(ed.presets.find((p) => p.id === plainId).settings.size) === 77
+
+  ed.deletePreset(plainId)
+  ed.deletePreset(madeId)
+  R.deleteRemoves = ed.presets.length === before && !ed.presets.some((p) => p.id === plainId)
+  R.deleteClearsActive = ed.activePresetId === null
 
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R
