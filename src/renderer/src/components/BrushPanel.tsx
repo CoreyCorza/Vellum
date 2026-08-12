@@ -5,6 +5,8 @@ import { LayersPanel } from './LayersPanel'
 import { FloatingPanel } from './FloatingPanel'
 import { CurveEditor } from './CurveEditor'
 import { PresetBox } from './PresetBox'
+import { Section } from './Section'
+import { StrokePreview } from './StrokePreview'
 
 const pct = (v: number): string => `${Math.round(v)}%`
 
@@ -12,6 +14,15 @@ export function BrushPanel(): JSX.Element {
   const editor = useEditorState()
   const b = editor.brush
   const selected = editor.presets.find((p) => p.id === editor.activePresetId)
+
+  // Collapsed headers report VALUES, not descriptions — the point of collapsing is
+  // to stop scrolling, not to stop knowing.
+  const dynamicsOn = [
+    b.pressureToSize && 'size',
+    b.pressureToFlow && 'flow',
+    b.pressureToOpacity && 'opacity',
+    b.tiltToSize && 'tilt'
+  ].filter(Boolean) as string[]
 
   const check = (
     id: string,
@@ -55,8 +66,14 @@ export function BrushPanel(): JSX.Element {
         initialTop={10}
         initialRight={10}
       >
-      <div className="sec">
-        <h2>Brush</h2>
+      <StrokePreview />
+
+      <Section
+        id="brush"
+        title="Brush"
+        defaultOpen
+        summary={`${b.size < 10 ? b.size.toFixed(1) : Math.round(b.size)} px · ${Math.round(b.hardness * 100)}%`}
+      >
         <Slider
           label="Size" value={b.size} min={1} max={400} gamma={2.4} step={0.1} defaultValue={34}
           format={(v) => `${v < 10 ? v.toFixed(1) : Math.round(v)} px`}
@@ -84,10 +101,13 @@ export function BrushPanel(): JSX.Element {
           label="Spacing" value={b.spacing * 100} min={1} max={50} gamma={1.6} step={1} defaultValue={6}
           format={pct} onChange={(v) => editor.setBrush({ spacing: v / 100 })}
         />
-      </div>
+      </Section>
 
-      <div className="sec">
-        <h2>Pen dynamics</h2>
+      <Section
+        id="dynamics"
+        title="Pen dynamics"
+        summary={dynamicsOn.length ? dynamicsOn.join(', ') : 'off'}
+      >
         {check('d-size', 'Pressure → size', 'pressureToSize')}
         {/* Curves are always present, dimmed when their dynamic is off. Removing
             them shifted every control below on each tick and left a hole at the
@@ -118,10 +138,13 @@ export function BrushPanel(): JSX.Element {
           format={pct} onChange={(v) => editor.setBrush({ minSize: v / 100 })}
         />
         {check('d-tilt', 'Tilt → size (flatten)', 'tiltToSize')}
-      </div>
+      </Section>
 
-      <div className="sec">
-        <h2>Stroke</h2>
+      <Section
+        id="stroke"
+        title="Stroke"
+        summary={b.stabilise > 0 ? `stabiliser ${Math.round(b.stabilise * 100)}%` : 'no stabiliser'}
+      >
         <Slider
           label="Stabiliser" value={b.stabilise * 100} min={0} max={95} step={1} defaultValue={35}
           format={pct} onChange={(v) => editor.setBrush({ stabilise: v / 100 })}
@@ -137,7 +160,7 @@ export function BrushPanel(): JSX.Element {
           onChange={(v) => editor.setBrush({ pathSmoothness: v / 100 })}
         />
         {check('d-speed', 'Speed → size (taper)', 'speedToSize')}
-      </div>
+      </Section>
       </FloatingPanel>
 
       <PresetBox />

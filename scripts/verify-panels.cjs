@@ -255,8 +255,17 @@ const SCRIPT = `(async () => {
   // of the panel.
   const settingsBody = document.querySelector('#brush-panel .floating-panel-body')
   if (settingsBody) {
+    // The Stroke category's header is the marker: it sits below the curves, so if
+    // toggling a dynamic changes anything's height it moves. Settings live in
+    // collapsible categories now, so Pen dynamics has to be open for the curves to
+    // exist at all.
     const strokeHead = () =>
-      [...document.querySelectorAll('#brush-panel h2')].find((h) => h.textContent.trim() === 'Stroke')
+      [...document.querySelectorAll('.sect-title')].find((t) => t.textContent.trim() === 'Stroke')
+    const dynHead = [...document.querySelectorAll('.sect-head')].find((h) =>
+      h.textContent.includes('Pen dynamics')
+    )
+    if (dynHead && dynHead.getAttribute('aria-expanded') === 'false') dynHead.click()
+    await sleep(300)
     ed.setBrush({ pressureToSize: true, pressureToFlow: true, pressureToOpacity: true })
     await sleep(240)
     const onY = Math.round(strokeHead().getBoundingClientRect().top)
@@ -284,6 +293,43 @@ const SCRIPT = `(async () => {
     ? getComputedStyle(box).appearance === 'none' &&
       getComputedStyle(box).backgroundColor !== 'rgba(0, 0, 0, 0)'
     : false
+
+  // Settings are grouped into collapsible categories, because stacking every
+  // control in one column stopped scaling the moment there was more than a
+  // handful. A collapsed header must still report its values — collapsing is to
+  // save scrolling, not to hide what the brush is doing.
+  const heads = () => [...document.querySelectorAll('.sect-head')]
+  R.hasCategories = heads().length >= 3
+  ed.setBrush({ pressureToSize: true, pressureToOpacity: true, stabilise: 0.2 })
+  heads()
+    .filter((h) => h.getAttribute('aria-expanded') === 'true')
+    .forEach((h) => h.click())
+  await sleep(360)
+  const settings = document.querySelector('#brush-panel .floating-panel-body')
+  const shutH = settings.scrollHeight
+  R.collapsedHeadersShowValues = heads()
+    .filter((h) => h.getAttribute('aria-expanded') === 'false')
+    .every((h) => {
+      const sum = h.querySelector('.sect-summary')
+      return !!sum && sum.textContent.trim().length > 0
+    })
+
+  heads()
+    .filter((h) => h.getAttribute('aria-expanded') === 'false')
+    .forEach((h) => h.click())
+  await sleep(360)
+  R.expandingCostsHeight = settings.scrollHeight > shutH * 1.5
+
+  // A live stroke of the current brush, since with categories closed you can only
+  // see a few settings at once and something has to show the combined result.
+  const strip = document.querySelector('.stroke-preview img')
+  R.livePreviewExists = !!strip && strip.src.startsWith('data:image/png')
+  const wasSrc = strip ? strip.src : ''
+  ed.setBrush({ size: 120, hardness: 1 })
+  await sleep(360)
+  R.livePreviewFollowsTheBrush =
+    !!document.querySelector('.stroke-preview img') &&
+    document.querySelector('.stroke-preview img').src !== wasSrc
 
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R

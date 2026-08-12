@@ -47,6 +47,15 @@ export class PresetThumbnails {
     return url
   }
 
+  /**
+   * A preview of loose settings rather than a saved preset, for the live strip in
+   * the settings panel. Uncached on purpose: the whole point is that it changes as
+   * the sliders move.
+   */
+  live(settings: BrushSettings, erase: boolean): string {
+    return this.render({ id: 'live', name: '', erase, settings })
+  }
+
   /** Drop one preset's preview, or all of them, after an edit. */
   invalidate(id?: string): void {
     if (id === undefined) this.cache.clear()
