@@ -635,27 +635,32 @@ table.kv td:last-child {
   touch-action: pan-y;
 }
 .floating-panel-body,
-.layer-list {
+.layer-list,
+.preset-well {
   scrollbar-width: thin;
   scrollbar-color: #4b4b4b transparent;
 }
 .floating-panel-body::-webkit-scrollbar,
-.layer-list::-webkit-scrollbar {
+.layer-list::-webkit-scrollbar,
+.preset-well::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 .floating-panel-body::-webkit-scrollbar-track,
-.layer-list::-webkit-scrollbar-track {
+.layer-list::-webkit-scrollbar-track,
+.preset-well::-webkit-scrollbar-track {
   background: transparent;
 }
 .floating-panel-body::-webkit-scrollbar-thumb,
-.layer-list::-webkit-scrollbar-thumb {
+.layer-list::-webkit-scrollbar-thumb,
+.preset-well::-webkit-scrollbar-thumb {
   background: #4b4b4b;
   border: none;
   border-radius: 6px;
 }
 .floating-panel-body::-webkit-scrollbar-thumb:hover,
-.layer-list::-webkit-scrollbar-thumb:hover {
+.layer-list::-webkit-scrollbar-thumb:hover,
+.preset-well::-webkit-scrollbar-thumb:hover {
   background: #606060;
 }
 .floating-panel-resize {
@@ -711,6 +716,11 @@ table.kv td:last-child {
   justify-content: flex-end;
 }
 .mini {
+  /* Centres its contents whether they are a glyph or an inline SVG; an SVG left to
+     the text baseline sits low in the button. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 20px;
   height: 20px;
   border: none;
@@ -1110,13 +1120,17 @@ button.btn[aria-pressed='true'] {
    The well is a bordered, scrolling box rather than loose buttons, so a long
    shelf has an obvious edge and does not push the rest of the panel down. */
 .sec-menu {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 16px;
   background: none;
   border: 0;
-  padding: 0 3px;
+  padding: 0;
   margin: 0 0 6px;
   color: #7d7d7d;
-  font-size: 13px;
-  line-height: 1;
+  line-height: 0;
   cursor: pointer;
 }
 .sec-menu:hover,
