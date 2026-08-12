@@ -113,6 +113,13 @@ export class Editor {
 
   tool: ToolId = 'brush'
 
+  /**
+   * Strokes finished since launch. Not statistics — the spring-loaded eraser
+   * needs to know whether the tool was USED while its key was held, which is
+   * what separates "hold E to erase a bit" from "tap E to switch to it".
+   */
+  strokesCommitted = 0
+
   /** Resolved settings, cached: the dab loop reads these per dab, so they cannot
    *  be rebuilt on every access. Recomputed by `reresolve`. */
   private resolvedBrush: BrushSettings = { ...DEFAULT_BRUSH }
@@ -467,6 +474,7 @@ export class Editor {
 
   endStroke(): void {
     if (!this.strokes.active) return
+    this.strokesCommitted++
     const erasing = this.strokes.erasing
     this.strokes.end()
 

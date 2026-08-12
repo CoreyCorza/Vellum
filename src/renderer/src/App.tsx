@@ -10,7 +10,7 @@ import { CanvasBar } from './components/CanvasBar'
 import { SettingsDialog } from './components/SettingsDialog'
 import { loadPrefs, savePrefs } from './prefs'
 import { savePng } from './platform'
-import { clamp } from '@engine/types'
+import { clamp, type ToolId } from '@engine/types'
 import type { Modifiers } from '@engine/input'
 
 const DOC_WIDTH = 2048
@@ -102,6 +102,18 @@ export function App(): JSX.Element {
       if (e.target instanceof HTMLSelectElement) e.target.blur()
     }
 
+    /**
+     * Spring-loaded eraser state.
+     *
+     * E does two jobs and which one is meant is only knowable on release: tap it
+     * and you want to switch tools, hold it and erase and you want to go back
+     * where you were. Rather than a timing threshold — which always feels wrong
+     * to somebody — the test is whether the eraser was actually USED while the
+     * key was down. Drawing while holding is what makes it temporary; that is
+     * the intent, stated by the hand rather than by a stopwatch.
+     */
+    let spring: { from: ToolId; strokes: number } | null = null
+
     const down = (e: KeyboardEvent): void => {
       if (isTextEntry(e.target)) return
       // A menu or dialog owns the keyboard while it is open, so `e` doesn't
@@ -151,7 +163,15 @@ export function App(): JSX.Element {
 
       switch (k) {
         case 'b': editor.setTool('brush'); break
-        case 'e': editor.setTool('eraser'); break
+        case 'e':
+          // Auto-repeat must not re-arm the spring, or the remembered tool
+          // becomes 'eraser' a tick after the key goes down and releasing has
+          // nothing to return to.
+          if (!e.repeat) {
+            spring = { from: editor.tool, strokes: editor.strokesCommitted }
+            if (editor.tool !== 'eraser') editor.setTool('eraser')
+          }
+          break
         case 'i': editor.setTool('picker'); break
         case '[': editor.setBrush({ size: Math.max(1, editor.brush.size * 0.85) }); break
         case ']': editor.setBrush({ size: Math.min(400, editor.brush.size * 1.18 + 1) }); break
@@ -185,6 +205,20 @@ export function App(): JSX.Element {
     const up = (e: KeyboardEvent): void => {
       if (e.code === 'Space') mods.space = false
       if (e.key.toLowerCase() === 's') editor.endSizeScrub('keys')
+
+      if (e.key.toLowerCase() === 'e' && spring) {
+        const used = editor.strokesCommitted > spring.strokes
+        if (used) {
+          // Held and erased: temporary. Go back to whatever was in hand.
+          if (spring.from !== 'eraser') editor.setTool(spring.from)
+        } else if (spring.from === 'eraser') {
+          // Tapped while already erasing: the second half of a toggle.
+          editor.setTool('brush')
+        }
+        // Tapped from the brush without erasing: stay on the eraser.
+        spring = null
+      }
+
       mods.alt = e.altKey
       mods.ctrl = e.ctrlKey || e.metaKey
     }
@@ -196,6 +230,9 @@ export function App(): JSX.Element {
       mods.alt = false
       mods.ctrl = false
       editor.endSizeScrub('keys')
+      // The keyup will never arrive. Disarm rather than revert: changing tools
+      // while the window is not focused would be a surprise on the way back.
+      spring = null
     }
 
     // Suppress the pen press-and-hold context menu everywhere except text

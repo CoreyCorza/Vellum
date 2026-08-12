@@ -84,6 +84,50 @@ const SCRIPT = `(() => {
   R.presetFlowsToInherited = ed.brush.size === 8 && ed.brush.flow === 1
   R.presetLeavesOwnedAlone = ed.brush.hardness === 1
 
+  // --- spring-loaded E ------------------------------------------------------
+  // Tap to switch, hold-and-erase to borrow. Which was meant is only knowable on
+  // release, and the test is whether the eraser was USED while the key was down.
+  const key = (type, opts) =>
+    window.dispatchEvent(new KeyboardEvent(type, { key: 'e', bubbles: true, ...opts }))
+  const drawSomething = () => {
+    const pt = (x) => ({ x: x, y: 500, pressure: 1, tilt: 0, twist: 0, t: x * 16 })
+    ed.beginStroke(pt(100), true)
+    ed.extendStroke(pt(140))
+    ed.endStroke()
+  }
+
+  ed.setTool('brush')
+
+  // 9. Tap from the brush: switch and stay.
+  key('keydown'); key('keyup')
+  R.tapSwitches = ed.tool === 'eraser'
+
+  // 10. Tap again: the other half of the toggle.
+  key('keydown'); key('keyup')
+  R.tapAgainToggles = ed.tool === 'brush'
+
+  // 11. Hold, erase, release: back to what was in hand.
+  key('keydown')
+  R.holdActivates = ed.tool === 'eraser'
+  drawSomething()
+  key('keyup')
+  R.holdSpringsBack = ed.tool === 'brush'
+
+  // 12. Auto-repeat must not re-arm, or the remembered tool becomes 'eraser' one
+  //     tick in and there is nothing to spring back to.
+  key('keydown')
+  key('keydown', { repeat: true })
+  key('keydown', { repeat: true })
+  drawSomething()
+  key('keyup')
+  R.repeatDoesNotBreakSpring = ed.tool === 'brush'
+
+  // 13. Holding without erasing is a slow tap, not a borrow.
+  key('keydown')
+  key('keyup')
+  R.holdWithoutUseStays = ed.tool === 'eraser'
+  ed.setTool('brush')
+
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R
 })()`
