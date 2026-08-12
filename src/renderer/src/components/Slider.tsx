@@ -155,6 +155,9 @@ export function Slider(props: SliderProps): JSX.Element {
           className="sl-edit"
           autoFocus
           defaultValue={String(+value.toFixed(2))}
+          // Selected on focus, so typing replaces the value rather than appending
+          // to it. Nobody opens this to add a digit to what is already there.
+          onFocus={(e) => e.currentTarget.select()}
           onPointerDown={(e) => e.stopPropagation()}
           onKeyDown={(e) => {
             e.stopPropagation()

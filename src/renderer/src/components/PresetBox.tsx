@@ -167,6 +167,7 @@ export function PresetBox(): JSX.Element {
         className="preset-rename"
         autoFocus
         defaultValue={p.name}
+        onFocus={(e) => e.currentTarget.select()}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={(e) => {
           e.stopPropagation()

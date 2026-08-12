@@ -814,13 +814,13 @@ button.btn[aria-pressed='true'] {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 22px;
+  height: 20px;
   padding: 0 7px;
   margin: 0 0 4px;
   border-radius: 5px;
   background: var(--panel-2);
   overflow: hidden;
-  cursor: ew-resize;
+  cursor: default;
   touch-action: none;
   outline: none;
   user-select: none;
@@ -873,7 +873,7 @@ button.btn[aria-pressed='true'] {
   width: 62px;
   min-width: 0;
   padding: 0 2px;
-  border: 1px solid var(--accent);
+  border: none;
   border-radius: 3px;
   background: var(--panel);
   color: #ffffff;
