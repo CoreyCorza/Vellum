@@ -671,6 +671,12 @@ table.kv td:last-child {
   touch-action: none;
   z-index: 2;
 }
+/* The grip only shows when the pointer is on the panel. Sitting there permanently
+   it is a mark in the corner of every panel that means nothing most of the time —
+   and there are five of them. Panel hover rather than handle hover, so the handle
+   stays findable: hovering exactly a 14px corner you have not been told about is
+   not discovery. Kept visible while resizing, because pointer capture takes the
+   pointer outside the corner as soon as the drag starts. */
 .floating-panel-resize::after {
   content: '';
   position: absolute;
@@ -678,12 +684,30 @@ table.kv td:last-child {
   bottom: 3px;
   width: 7px;
   height: 7px;
-  opacity: 0.55;
+  opacity: 0;
+  transition: opacity 90ms linear;
   background: repeating-linear-gradient(
     135deg,
     transparent 0 2px,
     var(--fg-faint) 2px 3px
   );
+}
+.floating-panel:hover .floating-panel-resize::after {
+  opacity: 0.4;
+}
+/* Scoped through .floating-panel deliberately. Written as
+   `.floating-panel-resize:hover::after` it never applied: the panel-hover rule above
+   carries three class-level selectors to its two, so it won on specificity whatever
+   the source order, and the handle simply never brightened. */
+.floating-panel .floating-panel-resize:hover::after,
+.floating-panel .floating-panel-resize:active::after {
+  opacity: 0.9;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .floating-panel-resize::after {
+    transition: none;
+  }
 }
 .sec {
   margin: 0 0 12px;

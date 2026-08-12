@@ -240,6 +240,16 @@ const SCRIPT = `(async () => {
     R.railHeadHasNoTitleBar = getComputedStyle(railGrip).backgroundColor === 'rgba(0, 0, 0, 0)'
   }
 
+  // The resize grip is hidden until the pointer is on the panel. Read from the
+  // ::after opacity, which is where the rule lives; the handle itself stays
+  // hit-testable at all times so resizing never depends on seeing it first.
+  const anyPanel = document.querySelector('.floating-panel')
+  const handle = anyPanel && anyPanel.querySelector('.floating-panel-resize')
+  R.gripHiddenAtRest = handle
+    ? Number(getComputedStyle(handle, '::after').opacity) === 0
+    : false
+  R.gripStaysHitTestable = handle ? getComputedStyle(handle).pointerEvents !== 'none' : false
+
   R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
   return R
 })()`
