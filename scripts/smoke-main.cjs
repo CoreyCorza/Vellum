@@ -27,7 +27,11 @@ app.whenReady().then(async () => {
   const result = await win.webContents.executeJavaScript(`(() => {
     const root = document.getElementById('root');
     const stage = document.getElementById('view');
-    const sliders = document.querySelectorAll('.sl-track');
+    // The bar and the track are one element now: the label and value live inside
+    // it. What matters here is unchanged — every slider must carry
+    // touch-action: none, which is what lets the pen move the value on contact
+    // instead of waiting for the browser to rule out a scroll or a long-press.
+    const sliders = document.querySelectorAll('.sl');
     const layers = document.querySelectorAll('.layer');
     const touchActions = [...sliders].map(e => getComputedStyle(e).touchAction)
       .filter((v,i,a) => a.indexOf(v) === i);

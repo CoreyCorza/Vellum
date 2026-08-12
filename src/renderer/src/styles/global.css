@@ -807,100 +807,79 @@ button.btn[aria-pressed='true'] {
 
 /* ------------------------------------------------------------------ sliders */
 .sl {
-  margin: 0 0 10px;
+  /* The bar IS the row: label and value sit inside it, the fill shows position.
+     Saves about fourteen pixels per control against a label line above a thin
+     track, which is over a hundred across the settings panel. */
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  padding: 0 7px;
+  margin: 0 0 4px;
+  border-radius: 5px;
+  background: var(--panel-2);
+  overflow: hidden;
+  cursor: ew-resize;
   touch-action: none;
   outline: none;
+  user-select: none;
 }
-.sl-top {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  margin-bottom: 2px;
+.sl:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.sl-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: #6b6b6b;
+  pointer-events: none;
+}
+.sl:hover .sl-fill,
+.sl.drag .sl-fill {
+  background: #7d7d7d;
+}
+.sl.fine .sl-fill {
+  background: #6f7c88;
+}
+
+/* Above the fill, and light enough to stay legible either side of its edge. */
+.sl-lab,
+.sl-val {
+  position: relative;
+  z-index: 1;
 }
 .sl-lab {
   flex: 1;
-  color: var(--fg-dim);
+  min-width: 0;
+  color: var(--fg-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.sl:hover .sl-lab,
-.sl:focus .sl-lab {
-  color: var(--fg);
-}
 .sl-val {
+  flex: none;
+  color: #ffffff;
   font-variant-numeric: tabular-nums;
-  color: var(--fg);
-  font-size: 10px;
-  padding: 0 4px;
-  border-radius: 3px;
   cursor: text;
 }
-.sl-val:hover {
-  background: var(--panel-2);
-  border: none;
-}
+
 .sl-edit {
-  width: 66px;
-  background: var(--panel-2);
-  border: none;
-  color: var(--fg);
-  border-radius: 3px;
-  font: inherit;
-  font-size: 10px;
-  text-align: right;
-  padding: 0 3px;
-  outline: none;
-}
-.sl-track {
   position: relative;
-  height: 12px;
-  cursor: ew-resize;
-  touch-action: none;
-}
-.sl-track::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 4px;
-  height: 4px;
+  z-index: 1;
+  flex: none;
+  width: 62px;
+  min-width: 0;
+  padding: 0 2px;
+  border: 1px solid var(--accent);
   border-radius: 3px;
-  background: var(--line-2);
-}
-.sl-fill {
-  position: absolute;
-  left: 0;
-  top: 4px;
-  height: 4px;
-  border-radius: 3px;
-  background: #8f8f8f;
-}
-.sl:hover .sl-fill,
-.sl.drag .sl-fill {
-  background: var(--accent);
-}
-.sl-knob {
-  position: absolute;
-  top: 4.5px;
-  width: 0px;
-  height: 0px;
-  border-radius: 50%;
-  background: var(--fg);
-  margin-left: -6px;
-  pointer-events: none;
-  box-shadow: 0 1px 3px #0009;
-}
-.sl:hover .sl-knob,
-.sl.drag .sl-knob {
-  background: #fff;
-}
-.sl.fine .sl-knob {
-  box-shadow: 0 0 0 3px var(--accent-dim), 0 1px 3px #0009;
-}
-.sl.fine .sl-lab::after {
-  content: ' · fine';
-  color: var(--accent);
+  background: var(--panel);
+  color: #ffffff;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 /* ------------------------------------------------------------------ presets */
