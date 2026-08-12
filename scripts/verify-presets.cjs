@@ -93,28 +93,68 @@ const SCRIPT = `(() => {
   ed.setBrush({ color: '#00ff00' })
   R.colourIsNotAnEdit = ed.presetModified === false
 
-  // Clicking the row you are already on must not reload it. This goes through the
-  // DOM, because the guard lives in the panel rather than the engine — and it has
-  // to wait a frame first: React batches, so aria-pressed is still the previous
-  // value in the tick that changed the engine.
-  ed.applyPreset('ink')
-  ed.setBrush({ size: 44 })
-  return new Promise((res) => setTimeout(() => {
-    const el =
-      [...document.querySelectorAll('.preset-row, .preset-tile')].find(
-        (n) => n.getAttribute('aria-pressed') === 'true'
-      ) || null
-    R.foundSelectedInDom = el !== null
-    if (el) el.click()
+  // Everything below touches the DOM, so it has to wait a frame between acting and
+  // reading: React batches, and in the tick that changed the engine the markup is
+  // still the previous frame.
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  return (async () => {
+    // Clicking the row you are already on must not reload it. The guard lives in
+    // the panel rather than the engine, so this goes through a real click.
+    ed.applyPreset('ink')
+    ed.setBrush({ size: 44 })
+    await sleep(240)
+    const sel = [...document.querySelectorAll('.preset-row, .preset-tile')].find(
+      (n) => n.getAttribute('aria-pressed') === 'true'
+    )
+    R.foundSelectedInDom = !!sel
+    if (sel) sel.click()
+    await sleep(120)
     R.clickingSelectedKeepsEdits = Math.round(ed.brush.size) === 44
 
-    // Revert is the one thing that reloads it.
     ed.revertPreset()
     R.revertRestores = Math.round(ed.brush.size) === 8 && ed.presetModified === false
 
+    // Delete asks twice. One click must arm it and change nothing: the button sits
+    // near the resize corner and there is no undo.
+    const made = ed.addPreset(false)
+    ed.applyPreset(made)
+    await sleep(240)
+    const before = ed.presets.length
+    // The footer collapses to a menu when the panel is narrow, and the panel's
+    // width is remembered between runs — so find the delete control wherever it
+    // currently lives rather than assuming a layout.
+    const findDelete = async () => {
+      let d = document.querySelector('.preset-actions .danger')
+      if (d) return d
+      const opener = document.querySelector('.preset-actions .mini')
+      if (opener) {
+        opener.click()
+        await sleep(160)
+      }
+      return document.querySelector('.preset-actions .danger')
+    }
+    const del = await findDelete()
+    R.deleteButtonExists = !!del
+    if (del) del.click()
+    await sleep(160)
+    R.oneClickDoesNotDelete = ed.presets.length === before
+    R.oneClickArms = !!document.querySelector('.preset-actions .danger.armed')
+    const del2 = await findDelete()
+    if (del2) del2.click()
+    await sleep(160)
+    R.secondClickDeletes = ed.presets.length === before - 1
+
+    // Restoring defaults must bring built-ins back without discarding user brushes.
+    const mine = ed.addPreset(false)
+    ed.deletePreset('ink')
+    ed.restoreDefaultPresets()
+    R.restoreBringsBackBuiltIns = ed.presets.some((p) => p.id === 'ink')
+    R.restoreKeepsUserBrushes = ed.presets.some((p) => p.id === mine)
+    ed.deletePreset(mine)
+
     R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
-    res(R)
-  }, 260))
+    return R
+  })()
 })()`
 
 app.whenReady().then(async () => {

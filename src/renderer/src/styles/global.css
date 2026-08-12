@@ -1325,3 +1325,42 @@ button.btn[aria-pressed='true'] {
   color: var(--fg);
   opacity: 0.85;
 }
+
+/* --- Narrow shelf -----------------------------------------------------------
+   Squeezed to one tile per row the footer cannot hold five buttons, so it becomes
+   a single menu. Collapsing is driven by the panel's measured width, not the
+   window's — it is a floating panel and the two are unrelated. */
+.preset-shelf.narrow .sec-head {
+  justify-content: flex-end;
+}
+.preset-shelf.narrow .preset-well {
+  padding: 0;
+}
+.preset-shelf.narrow .preset-tiles {
+  padding: 3px;
+  gap: 3px;
+}
+
+/* Actions open UPWARDS from the footer: downwards would go off the bottom of the
+   panel, and the footer is already at the bottom. */
+.preset-menu.up {
+  top: auto;
+  bottom: 24px;
+  right: auto;
+  left: 0;
+  width: 150px;
+}
+.preset-menu .btn.danger {
+  background: #4a2a26;
+  color: #e8bdb5;
+}
+.preset-menu .btn.danger:hover:not(:disabled) {
+  background: #6d3630;
+  color: #f6e2de;
+}
+
+/* Armed delete: the second click is the one that does it. */
+.mini.danger.armed {
+  background: #8c3f36;
+  color: #fdece8;
+}

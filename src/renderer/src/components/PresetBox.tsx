@@ -7,14 +7,15 @@ import type { BrushPreset } from '@engine/brush/presets'
 
 export type PresetView = 'list' | 'icons'
 
+/** Below this the footer cannot hold five buttons, so it collapses to a menu. */
+const NARROW = 168
+
 /**
  * The brush shelf — its own panel, so it can be resized to taste.
  *
- * That is the reason it is not a section of the settings panel: how many brushes
- * you want in view, and how big, is personal. Drag the panel wide and you get a
- * dense grid; drag it narrow and tall and you get one per row. The well takes
- * whatever height the panel has, so resizing does the whole job and there is no
- * option to set.
+ * How many brushes you want in view, and how big, is personal: drag the panel wide
+ * for a dense grid, or squeeze it down to a single column. The well takes whatever
+ * height and width the panel has, so the resize handle is the only control needed.
  *
  * The stroke comes first in a list row because it is what you choose by — the name
  * is confirmation, not the thing you scan for.
@@ -25,8 +26,13 @@ export function PresetBox(): JSX.Element {
   const [view, setView] = useState<PresetView>(stored.presetView)
   const [tile, setTile] = useState(stored.presetTileSize)
   const [menu, setMenu] = useState(false)
+  const [actions, setActions] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
+  const [armed, setArmed] = useState(false)
+  const [narrow, setNarrow] = useState(false)
   const headRef = useRef<HTMLDivElement>(null)
+  const footRef = useRef<HTMLDivElement>(null)
+  const rootRef = useRef<HTMLDivElement>(null)
 
   // Two shapes, two renderers: a wide strip for the list and a square for the
   // tiles. Cropping the strip into a square magnifies its middle band, which made
@@ -42,13 +48,30 @@ export function PresetBox(): JSX.Element {
     tiles.invalidate()
   }, [shelfStamp, strips, tiles])
 
+  // Collapse on MEASURED width rather than a media query: this is a floating panel
+  // the user drags, so the window's size says nothing about how wide it is.
   useEffect(() => {
-    if (!menu) return
+    const el = rootRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => setNarrow(entry.contentRect.width < NARROW))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const closeAll = (): void => {
+    setMenu(false)
+    setActions(false)
+    setArmed(false)
+  }
+
+  useEffect(() => {
+    if (!menu && !actions) return
     const away = (e: PointerEvent): void => {
-      if (!headRef.current?.contains(e.target as Node)) setMenu(false)
+      const t = e.target as Node
+      if (!headRef.current?.contains(t) && !footRef.current?.contains(t)) closeAll()
     }
     const esc = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setMenu(false)
+      if (e.key === 'Escape') closeAll()
     }
     window.addEventListener('pointerdown', away, true)
     window.addEventListener('keydown', esc)
@@ -56,7 +79,7 @@ export function PresetBox(): JSX.Element {
       window.removeEventListener('pointerdown', away, true)
       window.removeEventListener('keydown', esc)
     }
-  }, [menu])
+  }, [menu, actions])
 
   const chooseView = (v: PresetView): void => {
     setView(v)
@@ -71,19 +94,60 @@ export function PresetBox(): JSX.Element {
   const presets = editor.presets
   const active = editor.activePresetId
   const modified = editor.presetModified
+  const selected = presets.find((p) => p.id === active)
   const sizeOf = (p: BrushPreset): number => Math.round(p.settings.size ?? 34)
 
   /**
    * Clicking the brush you are already on does nothing.
    *
-   * It used to reload it, which quietly discarded whatever you had just changed in
-   * the settings panel — and since editing also dropped the highlight, clicking the
-   * brush again to get the highlight back was the natural thing to do and the way
-   * you lost the work. Reloading is now the revert button and nothing else.
+   * It used to reload it, which quietly discarded whatever had just been changed in
+   * the settings panel. Reloading is the revert button and nothing else.
    */
   const choose = (id: string): void => {
     if (id === active) return
     editor.applyPreset(id)
+  }
+
+  const addPlain = (): void => {
+    editor.addPreset(false)
+    persist()
+    closeAll()
+  }
+  const addFromCurrent = (): void => {
+    editor.addPreset(true)
+    persist()
+    closeAll()
+  }
+  const saveInto = (): void => {
+    if (active) editor.updatePresetFromBrush(active)
+    persist()
+    closeAll()
+  }
+  const revert = (): void => {
+    editor.revertPreset()
+    closeAll()
+  }
+  /**
+   * Delete asks twice: the first click arms it, the second does it.
+   *
+   * There is no undo for a deleted brush, and the button sits near the panel's
+   * resize corner — a mis-drag landing on it would otherwise silently destroy a
+   * brush someone had set up.
+   */
+  const remove = (): void => {
+    if (!active) return
+    if (!armed) {
+      setArmed(true)
+      return
+    }
+    editor.deletePreset(active)
+    persist()
+    closeAll()
+  }
+  const restoreDefaults = (): void => {
+    editor.restoreDefaultPresets()
+    persist()
+    closeAll()
   }
 
   const nameField = (p: BrushPreset): JSX.Element =>
@@ -115,19 +179,22 @@ export function PresetBox(): JSX.Element {
     )
 
   return (
-    <div className="preset-shelf">
+    <div className={'preset-shelf' + (narrow ? ' narrow' : '')} ref={rootRef}>
       <div className="sec-head" ref={headRef}>
-        <h2>{presets.length} brushes</h2>
+        {!narrow && <h2>{presets.length} brushes</h2>}
         <button
           className="sec-menu"
           aria-expanded={menu}
-          title="View and tile size"
-          onClick={() => setMenu((m) => !m)}
+          title="View, tile size, restore defaults"
+          onClick={() => {
+            setActions(false)
+            setMenu((m) => !m)
+          }}
         >
           ⋯
         </button>
         {menu && (
-          <div className="preset-menu" role="group" aria-label="Shelf view options">
+          <div className="preset-menu" role="group" aria-label="Shelf options">
             <div className="preset-menu-row">
               <button
                 className="btn"
@@ -156,6 +223,9 @@ export function PresetBox(): JSX.Element {
                 onChange={chooseTile}
               />
             )}
+            <button className="btn" onClick={restoreDefaults}>
+              Restore default brushes
+            </button>
           </div>
         )}
       </div>
@@ -184,9 +254,7 @@ export function PresetBox(): JSX.Element {
                     conditionally moved the size column sideways every time a
                     slider was touched. */}
                 <span
-                  className={
-                    'preset-dirty' + (active === p.id && modified ? '' : ' invisible')
-                  }
+                  className={'preset-dirty' + (active === p.id && modified ? '' : ' invisible')}
                   title="Changed since you picked it — save it or revert with the buttons below"
                 >
                   ●
@@ -209,7 +277,11 @@ export function PresetBox(): JSX.Element {
                 onClick={() => choose(p.id)}
               >
                 <img src={tiles.get(p)} alt="" draggable={false} />
-                {active === p.id && modified && <span className="preset-dirty tile" title="Changed since you picked it">●</span>}
+                {active === p.id && modified && (
+                  <span className="preset-dirty tile" title="Changed since you picked it">
+                    ●
+                  </span>
+                )}
                 <span className="preset-badge">{sizeOf(p)}</span>
               </button>
             ))}
@@ -217,64 +289,105 @@ export function PresetBox(): JSX.Element {
         )}
       </div>
 
-      <div className="preset-actions">
-        <button
-          className="mini"
-          title="New brush — a plain default you then set up"
-          onClick={() => {
-            editor.addPreset(false)
-            persist()
-          }}
-        >
-          +
-        </button>
-        <button
-          className="mini"
-          title="New brush from the current settings — captures what you are using right now, eraser included"
-          onClick={() => {
-            editor.addPreset(true)
-            persist()
-          }}
-        >
-          ⧉
-        </button>
-        <button
-          className="mini"
-          disabled={!active || !modified}
-          title={
-            !active
-              ? 'Select a brush first'
-              : modified
-                ? 'Save these changes into the selected brush'
-                : 'No changes to save'
-          }
-          onClick={() => {
-            if (active) editor.updatePresetFromBrush(active)
-            persist()
-          }}
-        >
-          ⤓
-        </button>
-        <button
-          className="mini"
-          disabled={!modified}
-          title={modified ? 'Discard the changes and reload the brush' : 'No changes to discard'}
-          onClick={() => editor.revertPreset()}
-        >
-          ↺
-        </button>
-        <span className="preset-actions-gap" />
-        <button
-          className="mini danger"
-          disabled={!active}
-          title={active ? 'Delete the selected brush' : 'Select a brush first'}
-          onClick={() => {
-            if (active) editor.deletePreset(active)
-            persist()
-          }}
-        >
-          −
-        </button>
+      {/* Nothing destructive at the right-hand end: that corner belongs to the
+          resize handle, and a mis-drag onto Delete would be unrecoverable. */}
+      <div className="preset-actions" ref={footRef}>
+        {narrow ? (
+          <>
+            <button
+              className="mini"
+              aria-expanded={actions}
+              title="Brush actions"
+              onClick={() => {
+                setMenu(false)
+                setArmed(false)
+                setActions((a) => !a)
+              }}
+            >
+              ⋯
+            </button>
+            {actions && (
+              <div className="preset-menu up" role="group" aria-label="Brush actions">
+                <button className="btn" onClick={addPlain}>
+                  New brush
+                </button>
+                <button className="btn" onClick={addFromCurrent}>
+                  New from current
+                </button>
+                <button className="btn" disabled={!modified} onClick={saveInto}>
+                  Save changes
+                </button>
+                <button className="btn" disabled={!modified} onClick={revert}>
+                  Revert changes
+                </button>
+                <button
+                  className={'btn danger' + (armed ? ' armed' : '')}
+                  disabled={!active}
+                  onClick={remove}
+                >
+                  {armed ? 'Really delete?' : 'Delete brush'}
+                </button>
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <button
+              className="mini"
+              title="New brush — a plain default you then set up"
+              onClick={addPlain}
+            >
+              +
+            </button>
+            <button
+              className="mini"
+              title="New brush from the current settings — captures what you are using right now, eraser included"
+              onClick={addFromCurrent}
+            >
+              ⧉
+            </button>
+            <button
+              className="mini"
+              disabled={!active || !modified}
+              title={
+                !active
+                  ? 'Select a brush first'
+                  : modified
+                    ? 'Save these changes into the selected brush'
+                    : 'No changes to save'
+              }
+              onClick={saveInto}
+            >
+              ⤓
+            </button>
+            <button
+              className="mini"
+              disabled={!modified}
+              title={
+                modified ? 'Discard the changes and reload the brush' : 'No changes to discard'
+              }
+              onClick={revert}
+            >
+              ↺
+            </button>
+            <button
+              className={'mini danger' + (armed ? ' armed' : '')}
+              disabled={!active}
+              title={
+                !active
+                  ? 'Select a brush first'
+                  : armed
+                    ? `Click again to delete ${selected?.name ?? 'this brush'}`
+                    : `Delete ${selected?.name ?? 'the selected brush'}`
+              }
+              onBlur={() => setArmed(false)}
+              onClick={remove}
+            >
+              {armed ? '✓' : '−'}
+            </button>
+            <span className="preset-actions-gap" />
+          </>
+        )}
       </div>
     </div>
   )

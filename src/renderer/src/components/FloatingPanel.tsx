@@ -14,14 +14,21 @@ import {
 
 let highestPanelZ = 20
 
-const constrainSize = (panel: HTMLDivElement, size: FloatingSize): FloatingSize => {
+const constrainSize = (
+  panel: HTMLDivElement,
+  size: FloatingSize,
+  minWidthWanted = 180
+): FloatingSize => {
   const root = panel.parentElement
   if (!root) return size
 
   const statusHeight = root.querySelector<HTMLElement>('#status')?.offsetHeight ?? 0
   const maxWidth = Math.max(1, root.clientWidth - 8)
   const maxHeight = Math.max(1, root.clientHeight - statusHeight - 8)
-  const minWidth = Math.min(180, maxWidth)
+  // 180 suits a panel of labelled sliders, which stop being readable much below
+  // it. A grid of thumbnails does not care, and being able to squeeze it to one
+  // tile per row is the point of letting it resize at all — so the floor is a prop.
+  const minWidth = Math.min(minWidthWanted, maxWidth)
   const minHeight = Math.min(120, maxHeight)
 
   return {
@@ -34,6 +41,7 @@ export function FloatingPanel({
   id,
   title,
   titleSuffix,
+  minWidth,
   initialTop,
   initialRight,
   initialHeight,
@@ -44,6 +52,8 @@ export function FloatingPanel({
   /** Shown after the title, dimmer. For "which thing am I editing" — kept
    *  separate so the accessible name and the resize label stay stable. */
   titleSuffix?: ReactNode
+  /** Narrowest the user may drag this panel. Defaults to 180. */
+  minWidth?: number
   initialTop: number
   initialRight: number
   initialHeight?: number
@@ -87,7 +97,7 @@ export function FloatingPanel({
         return
       }
       if (preferredSize.current) {
-        setSize(constrainSize(panel, preferredSize.current))
+        setSize(constrainSize(panel, preferredSize.current, minWidth))
       }
       setPosition(positionForFloatingAnchor(panel, anchor.current))
     }
@@ -120,7 +130,7 @@ export function FloatingPanel({
     const next = constrainSize(panel, {
       width: resize.current.startWidth + clientX - resize.current.startX,
       height: resize.current.startHeight + clientY - resize.current.startY
-    })
+    }, minWidth)
     preferredSize.current = next
     setSize(next)
   }
@@ -132,8 +142,22 @@ export function FloatingPanel({
       className="floating-panel"
       style={
         position
-          ? { left: position.x, top: position.y, width: size?.width, height: size?.height, zIndex }
-          : { right: initialRight, top: initialTop, width: size?.width, height: size?.height, zIndex }
+          ? {
+              left: position.x,
+              top: position.y,
+              width: size?.width,
+              height: size?.height,
+              minWidth,
+              zIndex
+            }
+          : {
+              right: initialRight,
+              top: initialTop,
+              width: size?.width,
+              height: size?.height,
+              minWidth,
+              zIndex
+            }
       }
     >
       <div

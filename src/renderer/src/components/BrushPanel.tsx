@@ -141,6 +141,7 @@ export function BrushPanel(): JSX.Element {
         initialTop={320}
         initialRight={484}
         initialHeight={320}
+        minWidth={96}
       >
         <PresetBox />
       </FloatingPanel>

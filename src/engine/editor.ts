@@ -206,6 +206,20 @@ export class Editor {
     this.ui.emit()
   }
 
+  /**
+   * Put the built-in brushes back, keeping anything the user made.
+   *
+   * Without this, deleting a built-in is a one-way trip with no route back from
+   * inside the app — which makes a mis-click on Delete unrecoverable rather than
+   * merely annoying.
+   */
+  restoreDefaultPresets(): void {
+    const mine = this.presets.filter((p) => p.id.startsWith('user-'))
+    const builtIns = BUILT_IN_PRESETS.map((p) => ({ ...p, settings: presetSettings(p) }))
+    this.presets = [...builtIns, ...mine]
+    this.ui.emit()
+  }
+
   /** Restore the saved shelf at boot; the caller validates it. */
   restorePresets(list: BrushPreset[]): void {
     if (list.length === 0) return
