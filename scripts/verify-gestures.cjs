@@ -233,8 +233,18 @@ app.whenReady().then(async () => {
     // Regression: isTextField() treated every <input> as text entry, so a
     // focused CHECKBOX made the shortcut handler bail out — space toggled the
     // box and never reached the canvas.
+    // Settings live in collapsible categories now, and Pen dynamics starts closed,
+    // so the checkbox this needs is not in the DOM until the category is opened.
+    const dynHead = [...document.querySelectorAll('.sect-head')]
+      .find((h) => h.textContent.includes('Pen dynamics'));
+    if (dynHead && dynHead.getAttribute('aria-expanded') === 'false') dynHead.click();
+
     const cb = document.getElementById('d-size');
     const F = {};
+    // Named rather than silently skipped: the bare presence guard below let a
+    // missing control produce an empty result object and a failure with nothing to
+    // point at.
+    F.foundCheckbox = !!cb;
     if (cb) {
       cb.focus();
       const before = cb.checked;
@@ -277,7 +287,7 @@ app.whenReady().then(async () => {
     R.failed = !(
       B.armedOnKeyDown && B.previewAnchoredAtCursor && B.resizedWithNoButton &&
       B.didNotPaintDuringScrub && B.disarmedOnKeyUp && B.paintsAgainAfterRelease &&
-      F.togglesOnClick && F.focusDroppedAfterClick && F.spaceIsPrevented &&
+      F.foundCheckbox && F.togglesOnClick && F.focusDroppedAfterClick && F.spaceIsPrevented &&
       F.spaceDropsFocus && F.pannedNotPainted && F.textFieldSpaceUntouched &&
       R.resize.rightGrows && R.resize.leftShrinks &&
       R.resize.verticalIgnored && R.resize.previewHiddenOnUp && R.resize.anchoredWhereDragBegan &&
