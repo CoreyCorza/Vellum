@@ -626,7 +626,7 @@ export function report(
     /** Camera zoom when recorded. Absent is treated as 1. */
     viewScale?: number
   },
-  options: { stationary?: boolean } = {}
+  options: { stationary?: boolean; trimEnds?: boolean } = {}
 ): Report {
   /*
    * Everything below is in SCREEN pixels, not document pixels.
@@ -663,10 +663,19 @@ export function report(
   const acrossSpan = spread(first.error).peakToPeak
   const stationary = options.stationary ?? (alongSpan < 8 * acrossSpan && alongSpan < 40)
 
-  // Only a held recording gets trimmed: on a drawn line every sample is signal, and the
-  // largest steps are the fast middle rather than a fumble.
-  const raw = stationary ? trimToSettled(all) : all
-  const d = stationary ? deviation(raw) : first
+  /*
+   * Trimming is opt-in, and off by default.
+   *
+   * It exists for a pen wedged in a rig, where getting the pen into the rig is movement that
+   * has nothing to do with the tablet. Applied to a hovering hand it was catastrophic: it
+   * threw away 3440 of 4000 samples, because every real twitch of an unsupported arm looks
+   * like the lunge it was written to cut. The tremor IS the measurement there.
+   *
+   * Since hover recordings now start after a countdown and stop on their own, there is
+   * nothing at their ends to trim anyway.
+   */
+  const raw = options.trimEnds ? trimToSettled(all) : all
+  const d = options.trimEnds ? deviation(raw) : first
   const t = timing(raw)
 
   const inTime = spectrum(d.error, d.t.map((ms) => ms / 1000)).peak

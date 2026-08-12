@@ -45,9 +45,12 @@ app.whenReady().then(async () => {
         const d = window.diag
         if (!d || !d.report) return { failed: 'diag not exposed' }
         const parsed = JSON.parse(text)
-        const held = ['still', '', 'hold', 'hover']
+        // Which tests are of a pen that is not going anywhere. Stated outright rather than
+        // left to the analyser: passing undefined let it guess, and it read a pressure ramp
+        // that travelled 6 px as a drawn line, because 6 px is still a line.
+        const held = ['still', 'hover', 'braced', 'press', '']
         return parsed.recorded.map(function (c, i) {
-          const stationary = held.indexOf(c.label) >= 0 ? undefined : false
+          const stationary = held.indexOf(c.label) >= 0
           const r = d.report(c, { stationary: stationary })
           const dev = d.deviation(c.raw)
           const press = c.raw.map(function (p) {
