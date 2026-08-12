@@ -1,33 +1,6 @@
 # Vellum
 
-An experiment.. a prototype..  
-Expect nothing.  
-Im on a journey to figure out how a good art app is made.  
-I have no idea what Im doing.  
-And yes, this is vibecoded slop.  
-Im an artist.. not a professional programmer.  
-And yes, I am most likely definitely fundamentally approaching this the wrong way..  
-But I dont care.  
-Let me fail.. let me learn.. let me figure it out.  
-Help me, give me tips, help me figure it out.  
-
-Current state: Ok, maybe this is going somewhere.
-
-### Backend
-- [x] Fuck Windows Ink right off because it sucks dick
-- [x] Figure out what the fuck Wintab even is
-- [x] Get some basic pressure sensitivity happening
-- [x] Brush edges that are actually antialiased, at every size
-- [ ] Viewport quality — zooming out throws pixels away, zooming in goes blocky
-- [ ] Document format, so work can be saved
-
-### Frontend
-- [ ] Basic floating panels and figure out what the UI is going to be
-
-<img width="1736" height="1077" alt="image" src="https://github.com/user-attachments/assets/aade1c75-4cb6-4fee-bfee-a1fb8dccd040" />
-
-## How it works
-
+Prototype. In progress.  
 A drawing and painting application. Electron + TypeScript. Dabs are composited
 in WebGL2; layers and the viewport are still Canvas 2D.
 
