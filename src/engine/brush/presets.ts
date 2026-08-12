@@ -130,3 +130,32 @@ export const BUILT_IN_PRESETS: BrushPreset[] = [
 export function presetSettings(p: BrushPreset): BrushSettings {
   return { ...DEFAULT_BRUSH, ...p.settings }
 }
+
+/**
+ * Do these two settings differ in any way that belongs to a preset?
+ *
+ * Colour and symmetry are excluded because they are global — changing the colour
+ * is not editing the brush, and a preset that counted it as a change would report
+ * itself modified every time you picked a new one.
+ */
+export function settingsDiffer(a: BrushSettings, b: BrushSettings): boolean {
+  const keys = Object.keys(DEFAULT_BRUSH) as (keyof BrushSettings)[]
+  for (const k of keys) {
+    if (k === 'color' || k === 'symmetry') continue
+    const x = a[k]
+    const y = b[k]
+    if (Array.isArray(x) || Array.isArray(y)) {
+      if (!Array.isArray(x) || !Array.isArray(y) || x.length !== y.length) return true
+      for (let i = 0; i < x.length; i++) {
+        if (x[i].x !== y[i].x || x[i].y !== y[i].y) return true
+      }
+      continue
+    }
+    if (typeof x === 'number' && typeof y === 'number') {
+      if (Math.abs(x - y) > 1e-6) return true
+      continue
+    }
+    if (x !== y) return true
+  }
+  return false
+}

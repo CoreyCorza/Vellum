@@ -34,10 +34,7 @@ const SCRIPT = `(() => {
   ed.applyPreset('paint')
   R.presetKeepsColour = ed.brush.color === '#ff0000'
 
-  // Hand-editing means the brush is no longer that preset.
   R.activeAfterApply = ed.activePresetId === 'paint'
-  ed.setBrush({ size: 41 })
-  R.editClearsActive = ed.activePresetId === null
 
   // Every preview must be a real image, and they must not all be the same one.
   // Counted across BOTH views: which one is showing is a saved preference, and a
@@ -82,8 +79,42 @@ const SCRIPT = `(() => {
   R.deleteRemoves = ed.presets.length === before && !ed.presets.some((p) => p.id === plainId)
   R.deleteClearsActive = ed.activePresetId === null
 
-  R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
-  return R
+  // --- editing a selected brush ---------------------------------------------
+  // Editing used to clear the selection, so the settings panel looked like it was
+  // editing nothing, and clicking the brush again to get the highlight back
+  // reloaded it and threw the edits away.
+  ed.applyPreset('ink')
+  ed.setBrush({ size: 31 })
+  R.editKeepsSelection = ed.activePresetId === 'ink'
+  R.editMarksModified = ed.presetModified === true
+
+  // Colour is global, so it is not an edit to the brush.
+  ed.applyPreset('ink')
+  ed.setBrush({ color: '#00ff00' })
+  R.colourIsNotAnEdit = ed.presetModified === false
+
+  // Clicking the row you are already on must not reload it. This goes through the
+  // DOM, because the guard lives in the panel rather than the engine — and it has
+  // to wait a frame first: React batches, so aria-pressed is still the previous
+  // value in the tick that changed the engine.
+  ed.applyPreset('ink')
+  ed.setBrush({ size: 44 })
+  return new Promise((res) => setTimeout(() => {
+    const el =
+      [...document.querySelectorAll('.preset-row, .preset-tile')].find(
+        (n) => n.getAttribute('aria-pressed') === 'true'
+      ) || null
+    R.foundSelectedInDom = el !== null
+    if (el) el.click()
+    R.clickingSelectedKeepsEdits = Math.round(ed.brush.size) === 44
+
+    // Revert is the one thing that reloads it.
+    ed.revertPreset()
+    R.revertRestores = Math.round(ed.brush.size) === 8 && ed.presetModified === false
+
+    R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
+    res(R)
+  }, 260))
 })()`
 
 app.whenReady().then(async () => {

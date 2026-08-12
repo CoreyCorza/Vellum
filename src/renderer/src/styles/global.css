@@ -10,6 +10,8 @@
   --fg-faint: #c4c4c4;
   --accent: #ffffff;
   --accent-dim: #2c2c2c;
+  /* Marks something that differs from the value it would otherwise have. */
+  --differs: #59a9f0;
   --radius: 6px;
 
   --panel-shadow: 0 8px 24px #00000055;
@@ -1169,7 +1171,7 @@ button.btn[aria-pressed='true'] {
 }
 .preset-row {
   display: grid;
-  grid-template-columns: 72px 1fr auto;
+  grid-template-columns: 72px 1fr auto auto;
   align-items: center;
   gap: 0 8px;
   width: 100%;
@@ -1295,4 +1297,31 @@ button.btn[aria-pressed='true'] {
 }
 .preset-name {
   cursor: pointer;
+}
+
+/* A brush edited since it was picked. A dot rather than a word: it appears and
+   disappears constantly while working, and text would make the row jump. */
+.preset-dirty {
+  color: var(--differs);
+  font-size: 8px;
+  line-height: 1;
+}
+.preset-dirty.tile {
+  position: absolute;
+  inset: 3px auto auto 3px;
+  text-shadow: 0 0 3px #000000cc;
+}
+.preset-dirty.invisible {
+  visibility: hidden;
+}
+
+/* The selected brush's name, after the settings panel's own title. Dimmer than
+   the title so it reads as "of what" rather than as part of the panel's name. */
+.panel-title-sep {
+  margin: 0 5px;
+  opacity: 0.35;
+}
+.panel-title-of {
+  color: var(--fg);
+  opacity: 0.85;
 }

@@ -7,7 +7,7 @@ import { StrokeEngine } from './brush/stroke'
 import { NavDrag } from './gestures'
 import { GLStrokeRenderer } from './gl/strokeRenderer'
 import { DEFAULT_BRUSH, type BrushSettings } from './brush/settings'
-import { BUILT_IN_PRESETS, presetSettings, type BrushPreset } from './brush/presets'
+import { BUILT_IN_PRESETS, presetSettings, settingsDiffer, type BrushPreset } from './brush/presets'
 import type {
   BlendMode,
   CanvasScalingMode,
@@ -158,6 +158,29 @@ export class Editor {
     this.activePresetId = id
     this.ui.emit()
     return id
+  }
+
+  /**
+   * Is the live brush different from the preset it came from?
+   *
+   * Editing a slider used to CLEAR the selection, on the theory that the brush was
+   * then no longer that preset. It made the settings panel appear to be editing
+   * nothing, and the only way to get the highlight back was to click the preset
+   * again, which reloaded it and threw the edits away. Selection now survives
+   * editing and the preset is marked as modified instead — the same thing Krita,
+   * Photoshop and Clip Studio all do.
+   */
+  get presetModified(): boolean {
+    if (!this.activePresetId) return false
+    const preset = this.presets.find((p) => p.id === this.activePresetId)
+    if (!preset) return false
+    if (preset.erase !== (this.tool === 'eraser')) return true
+    return settingsDiffer(this.brush, presetSettings(preset))
+  }
+
+  /** Throw away the edits and load the selected preset again. */
+  revertPreset(): void {
+    if (this.activePresetId) this.applyPreset(this.activePresetId)
   }
 
   deletePreset(id: string): void {
@@ -419,10 +442,6 @@ export class Editor {
   setBrush(patch: Partial<BrushSettings>): void {
     Object.assign(this.brush, patch)
 
-    // Hand-editing means the brush is no longer that preset. Colour and symmetry
-    // are global, so they do not count as leaving it.
-    const onlyGlobal = Object.keys(patch).every((k) => k === 'color' || k === 'symmetry')
-    if (!onlyGlobal) this.activePresetId = null
 
     // Colour and symmetry are global, as in Photoshop. An eraser has no colour,
     // so choosing one while it is selected has to set what you paint with next

@@ -70,7 +70,21 @@ export function PresetBox(): JSX.Element {
 
   const presets = editor.presets
   const active = editor.activePresetId
+  const modified = editor.presetModified
   const sizeOf = (p: BrushPreset): number => Math.round(p.settings.size ?? 34)
+
+  /**
+   * Clicking the brush you are already on does nothing.
+   *
+   * It used to reload it, which quietly discarded whatever you had just changed in
+   * the settings panel — and since editing also dropped the highlight, clicking the
+   * brush again to get the highlight back was the natural thing to do and the way
+   * you lost the work. Reloading is now the revert button and nothing else.
+   */
+  const choose = (id: string): void => {
+    if (id === active) return
+    editor.applyPreset(id)
+  }
 
   const nameField = (p: BrushPreset): JSX.Element =>
     renaming === p.id ? (
@@ -156,16 +170,27 @@ export function PresetBox(): JSX.Element {
                 role="button"
                 tabIndex={0}
                 aria-pressed={active === p.id}
-                onClick={() => editor.applyPreset(p.id)}
+                onClick={() => choose(p.id)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
-                    editor.applyPreset(p.id)
+                    choose(p.id)
                   }
                 }}
               >
                 <img className="preset-strip" src={strips.get(p)} alt="" draggable={false} />
                 {nameField(p)}
+                {/* Always present, only sometimes visible: rendering it
+                    conditionally moved the size column sideways every time a
+                    slider was touched. */}
+                <span
+                  className={
+                    'preset-dirty' + (active === p.id && modified ? '' : ' invisible')
+                  }
+                  title="Changed since you picked it — save it or revert with the buttons below"
+                >
+                  ●
+                </span>
                 <span className="preset-size">{sizeOf(p)}</span>
               </div>
             ))}
@@ -181,9 +206,10 @@ export function PresetBox(): JSX.Element {
                 className="preset-tile"
                 aria-pressed={active === p.id}
                 title={p.name + ' — ' + sizeOf(p) + ' px'}
-                onClick={() => editor.applyPreset(p.id)}
+                onClick={() => choose(p.id)}
               >
                 <img src={tiles.get(p)} alt="" draggable={false} />
+                {active === p.id && modified && <span className="preset-dirty tile" title="Changed since you picked it">●</span>}
                 <span className="preset-badge">{sizeOf(p)}</span>
               </button>
             ))}
@@ -214,11 +240,13 @@ export function PresetBox(): JSX.Element {
         </button>
         <button
           className="mini"
-          disabled={!active}
+          disabled={!active || !modified}
           title={
-            active
-              ? 'Overwrite the selected brush with the current settings'
-              : 'Select a brush first'
+            !active
+              ? 'Select a brush first'
+              : modified
+                ? 'Save these changes into the selected brush'
+                : 'No changes to save'
           }
           onClick={() => {
             if (active) editor.updatePresetFromBrush(active)
@@ -226,6 +254,14 @@ export function PresetBox(): JSX.Element {
           }}
         >
           ⤓
+        </button>
+        <button
+          className="mini"
+          disabled={!modified}
+          title={modified ? 'Discard the changes and reload the brush' : 'No changes to discard'}
+          onClick={() => editor.revertPreset()}
+        >
+          ↺
         </button>
         <span className="preset-actions-gap" />
         <button

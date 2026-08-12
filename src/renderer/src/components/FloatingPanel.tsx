@@ -33,6 +33,7 @@ const constrainSize = (panel: HTMLDivElement, size: FloatingSize): FloatingSize 
 export function FloatingPanel({
   id,
   title,
+  titleSuffix,
   initialTop,
   initialRight,
   initialHeight,
@@ -40,6 +41,9 @@ export function FloatingPanel({
 }: {
   id: string
   title: string
+  /** Shown after the title, dimmer. For "which thing am I editing" — kept
+   *  separate so the accessible name and the resize label stay stable. */
+  titleSuffix?: ReactNode
   initialTop: number
   initialRight: number
   initialHeight?: number
@@ -163,7 +167,10 @@ export function FloatingPanel({
           drag.current = null
         }}
       >
-        <span>{title}</span>
+        <span>
+          {title}
+          {titleSuffix}
+        </span>
         <i aria-hidden="true" />
       </div>
       <div className="floating-panel-body">{children}</div>

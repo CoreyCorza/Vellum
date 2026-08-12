@@ -11,6 +11,7 @@ const pct = (v: number): string => `${Math.round(v)}%`
 export function BrushPanel(): JSX.Element {
   const editor = useEditorState()
   const b = editor.brush
+  const selected = editor.presets.find((p) => p.id === editor.activePresetId)
 
   const check = (
     id: string,
@@ -30,7 +31,30 @@ export function BrushPanel(): JSX.Element {
 
   return (
     <>
-      <FloatingPanel id="brush-panel" title="Brush Settings" initialTop={10} initialRight={10}>
+      {/* Naming the selected brush here is the only thing tying the two panels
+          together: without it the settings panel looks like a free-floating set of
+          sliders and there is no sign that touching one edits the brush you picked
+          next door. */}
+      <FloatingPanel
+        id="brush-panel"
+        title="Brush Settings"
+        titleSuffix={
+          selected && (
+            <>
+              <span className="panel-title-sep">|</span>
+              <span className="panel-title-of">{selected.name}</span>
+              {editor.presetModified && (
+                <span className="preset-dirty" title="Changed since you picked it">
+                  {' '}
+                  ●
+                </span>
+              )}
+            </>
+          )
+        }
+        initialTop={10}
+        initialRight={10}
+      >
       <div className="sec">
         <h2>Brush</h2>
         <Slider
