@@ -23,6 +23,8 @@ export interface Prefs {
   /** Preset shelf: which view, and how big the tiles are in the icon view. */
   presetView: 'list' | 'icons'
   presetTileSize: number
+  /** Panels the user has closed. Absent means "never chosen", so defaults apply. */
+  hiddenPanels?: string[]
   /** The whole shelf, since presets can now be added, renamed and deleted. */
   presets: BrushPreset[]
 }
@@ -113,7 +115,10 @@ export function loadPrefs(): Prefs {
         typeof parsed.presetTileSize === 'number' && Number.isFinite(parsed.presetTileSize)
           ? Math.min(96, Math.max(28, parsed.presetTileSize))
           : DEFAULT_PREFS.presetTileSize,
-      presets: sanitisePresets(parsed.presets)
+      presets: sanitisePresets(parsed.presets),
+      hiddenPanels: Array.isArray(parsed.hiddenPanels)
+        ? parsed.hiddenPanels.filter((x): x is string => typeof x === 'string')
+        : undefined
     }
   } catch {
     return { ...DEFAULT_PREFS }

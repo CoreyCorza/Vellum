@@ -1,0 +1,95 @@
+/**
+ * Panel visibility and the quick rail.
+ *
+ * Worth guarding because the failure is confusing rather than loud: a panel that
+ * will not reopen, or a Panels menu missing an entry, leaves someone with no way
+ * back to a panel they closed. And closing a panel must UNMOUNT it — the brush
+ * shelf holds a WebGL context for its previews, so merely hiding it would leak one
+ * per close.
+ */
+const { app, BrowserWindow, dialog } = require('electron')
+const path = require('node:path')
+
+const root = path.join(__dirname, '..')
+
+dialog.showErrorBox = (t, c) => { process.stdout.write(`FATAL ${t}: ${c}\n`); app.exit(1) }
+process.on('uncaughtException', (e) => { process.stdout.write(`FATAL ${e && e.stack}\n`); app.exit(1) })
+setTimeout(() => { process.stdout.write('FATAL watchdog\n'); app.exit(1) }, 90000)
+
+const SCRIPT = `(async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const R = {}
+  const ed = window.editor
+  const menu = (name) => [...document.querySelectorAll('.menu-title')].find((b) => b.textContent.trim() === name)
+  const item = (text) => [...document.querySelectorAll('.menu-item')].find((i) => i.textContent.includes(text))
+
+  R.panelsMenuExists = !!menu('Panels')
+  menu('Panels').click()
+  await sleep(200)
+  const labels = [...document.querySelectorAll('.menu-item')].map((i) => i.textContent.replace('✓', '').trim())
+  R.listsEveryPanel = ['Brush Settings', 'Brushes', 'Colour', 'Layers', 'Quick rail'].every((l) => labels.includes(l))
+
+  // Closing a panel must unmount it, not hide it: the shelf owns a WebGL context.
+  R.shelfOpenToStart = !!document.querySelector('.preset-shelf')
+  item('Brushes').click()
+  await sleep(280)
+  R.closingUnmounts = !document.querySelector('.preset-shelf')
+
+  menu('Panels').click()
+  await sleep(200)
+  item('Brushes').click()
+  await sleep(280)
+  R.reopeningWorks = !!document.querySelector('.preset-shelf')
+
+  // The quick rail duplicates controls that already have a home, so it starts off.
+  menu('Panels').click()
+  await sleep(200)
+  R.railStartsClosed = !document.querySelector('.quickrail')
+  item('Quick rail').click()
+  await sleep(300)
+  R.railOpens = !!document.querySelector('.quickrail')
+  R.railHasTwoSliders = document.querySelectorAll('.railsl').length === 2
+
+  // Its size slider must move the same value the panel slider does.
+  const sl = document.querySelector('.railsl')
+  sl.setPointerCapture = () => {}
+  const r = sl.getBoundingClientRect()
+  const before = ed.brush.size
+  sl.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 7, clientX: r.left + r.width / 2, clientY: r.bottom - 6, bubbles: true, isPrimary: true, button: 0, pointerType: 'mouse' }))
+  await sleep(60)
+  R.readoutShowsWhileDragging = !!document.querySelector('.railsl-readout')
+  // Portalled, because the rail is barely wider than the slider and panels clip.
+  const ro = document.querySelector('.railsl-readout')
+  R.readoutEscapesPanel = ro ? ro.parentElement === document.body : false
+  sl.dispatchEvent(new PointerEvent('pointermove', { pointerId: 7, clientX: r.left + r.width / 2, clientY: r.top + 6, bubbles: true }))
+  await sleep(60)
+  R.railDragChangesSize = ed.brush.size > before
+  sl.dispatchEvent(new PointerEvent('pointerup', { pointerId: 7, clientX: r.left + r.width / 2, clientY: r.top + 6, bubbles: true }))
+  await sleep(140)
+  R.readoutHidesAfter = !document.querySelector('.railsl-readout')
+
+  // The choice has to survive a restart, or every session starts by reopening things.
+  const stored = JSON.parse(localStorage.getItem('vellum.prefs') || '{}')
+  R.choicePersisted = Array.isArray(stored.hiddenPanels) && !stored.hiddenPanels.includes('quick-rail')
+
+  R.failed = Object.entries(R).some(([k, v]) => k !== 'failed' && v !== true)
+  return R
+})()`
+
+app.whenReady().then(async () => {
+  const win = new BrowserWindow({
+    width: 1400, height: 950, show: true,
+    webPreferences: {
+      preload: path.join(root, 'out/preload/index.mjs'),
+      contextIsolation: true, nodeIntegration: false, sandbox: false
+    }
+  })
+  await win.loadFile(path.join(root, 'out/renderer/index.html'), { search: 'debug' })
+  await new Promise((r) => setTimeout(r, 1500))
+  // A stored layout from an earlier run would decide the answers here.
+  await win.webContents.executeJavaScript('(() => { localStorage.clear(); location.reload(); return 1 })()')
+  await new Promise((r) => setTimeout(r, 2600))
+  const R = await win.webContents.executeJavaScript(SCRIPT)
+  process.stdout.write('PANELS ' + JSON.stringify(R, null, 2) + '\n')
+  app.exit(R.failed ? 1 : 0)
+})

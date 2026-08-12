@@ -1363,3 +1363,124 @@ button.btn[aria-pressed='true'] {
 .chev {
   display: block;
 }
+
+/* --- Quick rail -------------------------------------------------------------
+   A narrow strip of the two things reached for mid-stroke, plus undo. Everything
+   on it duplicates a control that lives elsewhere; it is a shortcut, not a home,
+   which is why it starts closed. */
+.floating-panel-body:has(.quickrail) {
+  display: flex;
+  padding: 6px 5px;
+  overflow: hidden;
+}
+
+.quickrail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+.quickrail-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: auto;
+}
+
+.quickrail-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  background: var(--panel-2);
+  color: var(--fg-dim);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.quickrail-btn:hover:not(:disabled) {
+  color: var(--fg-faint);
+  background: var(--button1);
+}
+.quickrail-btn.on {
+  background: var(--button1);
+  color: var(--accent);
+}
+.quickrail-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* The vertical sliders. Wordless on purpose — the value appears beside the thumb
+   while dragging, and the name is in the tooltip. Filled from the bottom so that a
+   bigger brush reads as a taller bar with nothing to interpret. */
+.railsl {
+  position: relative;
+  flex: 1;
+  min-height: 40px;
+  width: 22px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  overflow: visible;
+  cursor: ns-resize;
+  touch-action: none;
+  outline: none;
+}
+.railsl:focus-visible {
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.railsl-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  border-radius: 6px;
+  background: #6b6b6b;
+  pointer-events: none;
+}
+.railsl:hover .railsl-fill,
+.railsl.drag .railsl-fill {
+  background: #7d7d7d;
+}
+.railsl-thumb {
+  position: absolute;
+  left: 3px;
+  right: 3px;
+  height: 10px;
+  margin-bottom: -5px;
+  border-radius: 3px;
+  background: #d8d8d8;
+  pointer-events: none;
+}
+.railsl.drag .railsl-thumb {
+  background: var(--accent);
+}
+.railsl-readout {
+  position: fixed;
+  z-index: 200;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--panel-header);
+  border: 1px solid var(--line-2);
+  color: var(--fg-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* Menu entries that describe a state rather than an action. The column is always
+   present so labels line up whether or not anything is ticked. */
+.menu-tick {
+  display: inline-block;
+  width: 10px;
+  flex: none;
+  color: var(--accent);
+}

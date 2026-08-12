@@ -1,8 +1,11 @@
 import { useEffect, useRef } from 'react'
 import { useEditorState } from '../useEditor'
+import { PANELS, usePanels } from '../panels'
 
 export interface MenuEntry {
   label?: string
+  /** Shown with a tick. For entries that describe a state rather than an action. */
+  checked?: boolean
   shortcut?: string
   onSelect?: () => void
   disabled?: boolean
@@ -39,6 +42,7 @@ export function MenuBar({
   onOpenSettings: () => void
 }): JSX.Element {
   const editor = useEditorState()
+  const panels = usePanels()
   const barRef = useRef<HTMLDivElement>(null)
 
   // Click anywhere outside, or Escape, closes the menu.
@@ -139,6 +143,14 @@ export function MenuBar({
         todo('Show grid'),
         todo('Full screen')
       ]
+    },
+    {
+      title: 'Panels',
+      items: PANELS.map((p) => ({
+        label: p.label,
+        checked: panels.isOpen(p.id),
+        onSelect: () => panels.toggle(p.id)
+      }))
     }
   ]
 
@@ -177,6 +189,9 @@ export function MenuBar({
                       item.onSelect?.()
                     }}
                   >
+                    <span className="menu-tick" aria-hidden="true">
+                      {item.checked === true ? '✓' : ''}
+                    </span>
                     <span>{item.label}</span>
                     {item.shortcut && <span className="menu-shortcut">{item.shortcut}</span>}
                   </button>

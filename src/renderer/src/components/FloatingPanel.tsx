@@ -1,3 +1,4 @@
+import { usePanels } from '../panels'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   anchorForFloatingPosition,
@@ -42,6 +43,7 @@ export function FloatingPanel({
   title,
   titleSuffix,
   minWidth,
+  initialWidth,
   initialTop,
   initialRight,
   initialHeight,
@@ -54,11 +56,19 @@ export function FloatingPanel({
   titleSuffix?: ReactNode
   /** Narrowest the user may drag this panel. Defaults to 180. */
   minWidth?: number
+  /** Starting width. Defaults to 220, which suits a panel of labelled rows and is
+   *  far too wide for something like the quick rail. */
+  initialWidth?: number
   initialTop: number
   initialRight: number
   initialHeight?: number
   children: ReactNode
-}): JSX.Element {
+}): JSX.Element | null {
+  // Asked here rather than at each call site: a panel that has been closed should
+  // not render, and its CHILDREN should not mount either — the Brushes shelf holds
+  // a WebGL context for its previews, so a hidden panel quietly costing one would
+  // be a poor trade for a shorter component.
+  const panels = usePanels()
   const panelRef = useRef<HTMLDivElement>(null)
   const drag = useRef<{ pointerId: number; offsetX: number; offsetY: number } | null>(null)
   const resize = useRef<{
@@ -77,7 +87,8 @@ export function FloatingPanel({
     })
   )
   const preferredSize = useRef<FloatingSize | null>(
-    loadFloatingSize(id) ?? (initialHeight ? { width: 220, height: initialHeight } : null)
+    loadFloatingSize(id) ??
+      (initialHeight ? { width: initialWidth ?? 220, height: initialHeight } : null)
   )
   const [position, setPosition] = useState<FloatingPoint | null>(null)
   const [size, setSize] = useState<FloatingSize | null>(preferredSize.current)
@@ -134,6 +145,8 @@ export function FloatingPanel({
     preferredSize.current = next
     setSize(next)
   }
+
+  if (!panels.isOpen(id)) return null
 
   return (
     <div

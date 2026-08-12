@@ -9,6 +9,8 @@ import { MenuBar } from './components/MenuBar'
 import { CanvasBar } from './components/CanvasBar'
 import { SettingsDialog } from './components/SettingsDialog'
 import { loadPrefs, savePrefs } from './prefs'
+import { PanelVisibilityProvider } from './panels'
+import { QuickRail } from './components/QuickRail'
 import { savePng } from './platform'
 import { clamp, type ToolId } from '@engine/types'
 import type { Modifiers } from '@engine/input'
@@ -272,6 +274,7 @@ export function App(): JSX.Element {
 
   return (
     <EditorContext.Provider value={editor}>
+      <PanelVisibilityProvider>
       <MenuBar
         open={openMenu}
         onOpenChange={setOpenMenu}
@@ -289,9 +292,11 @@ export function App(): JSX.Element {
         <CanvasBar />
         <Rail onExport={() => void onExport()} />
         <BrushPanel />
+        <QuickRail />
       </div>
       <StatusBar />
       {settingsOpen && <SettingsDialog onClose={() => setSettingsOpen(false)} />}
+      </PanelVisibilityProvider>
     </EditorContext.Provider>
   )
 }
