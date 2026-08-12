@@ -550,8 +550,16 @@ export class Editor {
 
   // ------------------------------------------------------------------ strokes
 
+  /**
+   * Whether a stroke is in flight — which in profiler mode means a recording is, since no
+   * ink is being laid.
+   *
+   * Both input paths gate the move and release handlers on this, so leaving it false while
+   * profiling meant the first sample was recorded and every one after it was dropped on the
+   * floor. Caught by a test that drew thirty-one samples and got none back.
+   */
   get strokeActive(): boolean {
-    return this.strokes.active
+    return this.profiling ? this.recorder.recording : this.strokes.active
   }
 
   /** Single-sample pressure spikes rejected during the last stroke. */
@@ -569,7 +577,28 @@ export class Editor {
     return this.strokes.stabilisedPoints
   }
 
+  /**
+   * Profiler mode: samples get recorded and drawn as a bare diagnostic trail, and no ink
+   * is laid down.
+   *
+   * Routed here rather than in the input layer because this is the one place the Pointer
+   * Events path and the Wintab path meet. Intercepting further out would mean doing it
+   * twice and having the two drift.
+   *
+   * Nothing about the brush applies while profiling — no pressure to size, no opacity, no
+   * spline, no stabiliser. The trail has to show the samples as they arrived, or the line
+   * on screen disagrees with the numbers underneath it.
+   */
+  profiling = false
+  /** Called with each raw sample while profiling, for the trail. */
+  onProfileSample: ((p: StrokePoint, phase: 'down' | 'move' | 'up') => void) | null = null
+
   beginStroke(p: StrokePoint, erasing: boolean): void {
+    if (this.profiling) {
+      this.recorder.begin(p, this.camera.scale)
+      this.onProfileSample?.(p, 'down')
+      return
+    }
     const layer = this.doc.active
     if (layer.locked || !layer.visible) return
     this.strokeLayer = layer
@@ -587,12 +616,24 @@ export class Editor {
   }
 
   extendStroke(p: StrokePoint): void {
+    if (this.profiling) {
+      this.recorder.extend(p)
+      this.onProfileSample?.(p, 'move')
+      this.sampleCount++
+      return
+    }
     this.strokes.extend(p)
     this.sampleCount++
     this.invalidate()
   }
 
   endStroke(): void {
+    if (this.profiling) {
+      // No stabilised path to compare against, which is the point: a profiler recording
+      // is of the tablet, not of the brush engine.
+      this.recorder.end([])
+      return
+    }
     if (!this.strokes.active) return
     this.strokesCommitted++
     const erasing = this.strokes.erasing

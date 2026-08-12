@@ -70,6 +70,16 @@ export class StrokeRecorder {
     return this.strokes.length
   }
 
+  /** Whether a recording is in progress. */
+  get recording(): boolean {
+    return this.current !== null
+  }
+
+  /** Samples in the recording currently in progress, for a live readout. */
+  get currentSampleCount(): number {
+    return this.current ? this.current.raw.length : 0
+  }
+
   get lastSampleCount(): number {
     return this.strokes.length ? this.strokes[this.strokes.length - 1].raw.length : 0
   }

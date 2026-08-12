@@ -272,6 +272,134 @@ export function stationaryNoise(pts: readonly RawSample[]): Noise {
   }
 }
 
+export interface PressureStats {
+  min: number
+  max: number
+  /**
+   * How many distinct levels the pen reports. Derived from the smallest step actually
+   * seen, so it reports what arrived rather than what the box claims.
+   */
+  levels: number
+  /** Typical change between neighbouring samples. */
+  stepRms: number
+  /** Largest single jump. A big one next to a small typical is a spike, not a push. */
+  stepPeak: number
+  /**
+   * Jitter while the pen was pressed but not moving.
+   *
+   * The pressure equivalent of the position noise floor, and it needs the same care: a
+   * measurement taken while pressing harder is measuring the press. Only samples where the
+   * pen was barely moving count, and only where pressure was not trending.
+   */
+  jitterWhileStill: number
+  /** Reversals per second: how often the pressure changed direction. Chatter. */
+  reversalsPerSecond: number
+}
+
+/**
+ * What the pressure channel is doing.
+ *
+ * Position gets all the attention because a wobbly line is visible, but pressure drives
+ * size and opacity on nearly every brush, so jitter there shows up as a stroke that
+ * breathes. And there is a lot of room for it to hide: 16384 levels is far finer than any
+ * hand can hold steady, so every tremor in your grip is faithfully recorded and turned
+ * into a width change.
+ */
+export function pressureStats(pts: readonly RawSample[]): PressureStats {
+  const n = pts.length
+  if (n < 3) {
+    return {
+      min: 0, max: 0, levels: 0, stepRms: 0, stepPeak: 0,
+      jitterWhileStill: 0, reversalsPerSecond: 0
+    }
+  }
+
+  const steps: number[] = []
+  let finest = Infinity
+  let reversals = 0
+  let lastDir = 0
+  for (let i = 1; i < n; i++) {
+    const d = pts[i].pressure - pts[i - 1].pressure
+    steps.push(d)
+    const a = Math.abs(d)
+    if (a > 1e-9 && a < finest) finest = a
+    const dir = d > 1e-9 ? 1 : d < -1e-9 ? -1 : 0
+    if (dir !== 0) {
+      if (lastDir !== 0 && dir !== lastDir) reversals++
+      lastDir = dir
+    }
+  }
+
+  // Jitter measured only where the pen was holding still, so a deliberate press is not
+  // counted as noise. Detrended over a short window for the same reason.
+  const held: number[] = []
+  const win = 8
+  for (let i = win; i < n - win; i++) {
+    const moved = Math.hypot(pts[i + win].x - pts[i - win].x, pts[i + win].y - pts[i - win].y)
+    if (moved > 1) continue
+    let mean = 0
+    for (let k = i - win; k <= i + win; k++) mean += pts[k].pressure
+    mean /= win * 2 + 1
+    held.push(pts[i].pressure - mean)
+  }
+
+  const ps = pts.map((p) => p.pressure)
+  const duration = Math.max(1, pts[n - 1].t - pts[0].t)
+  const st = spread(steps)
+  return {
+    min: Math.min(...ps),
+    max: Math.max(...ps),
+    levels: finest === Infinity ? 0 : Math.round(1 / finest),
+    stepRms: st.rms,
+    stepPeak: st.peak,
+    jitterWhileStill: spread(held).sd,
+    reversalsPerSecond: (reversals / duration) * 1000
+  }
+}
+
+/**
+ * Drop the unsettled ends of a held-pen recording.
+ *
+ * Holding a pen perfectly still needs a rig, and getting the pen into and out of the rig
+ * is movement that has nothing to do with the tablet. Left in, those few samples set the
+ * peak-to-peak figure for the whole recording — real data showed a 2.13 px worst swing
+ * around a 0.08 px standard deviation, which is entirely the fumble.
+ *
+ * Rather than trimming a fixed fraction, this finds the longest calm stretch: the run of
+ * samples that stays within a few times the typical step of its own middle.
+ */
+export function trimToSettled(pts: readonly RawSample[]): RawSample[] {
+  const n = pts.length
+  if (n < 40) return [...pts]
+
+  const steps: number[] = []
+  for (let i = 1; i < n; i++) {
+    steps.push(Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y))
+  }
+  const sorted = [...steps].sort((a, b) => a - b)
+  const typical = sorted[Math.floor(sorted.length * 0.75)] || 0
+  // A generous allowance, since the point is only to cut the obvious lunges.
+  const allowed = Math.max(0.5, typical * 6)
+
+  let bestFrom = 0
+  let bestLen = 0
+  let from = 0
+  for (let i = 0; i < steps.length; i++) {
+    if (steps[i] > allowed) {
+      if (i - from > bestLen) {
+        bestLen = i - from
+        bestFrom = from
+      }
+      from = i + 1
+    }
+  }
+  if (steps.length - from > bestLen) {
+    bestLen = steps.length - from
+    bestFrom = from
+  }
+  return bestLen < 20 ? [...pts] : pts.slice(bestFrom, bestFrom + bestLen + 1)
+}
+
 export interface Peak {
   /** Cycles per unit of whatever the positions were: Hz for seconds, 1/px for pixels. */
   frequency: number
@@ -386,8 +514,20 @@ export function spectrum(
   }
   if (bins.length === 0) return { peak: null, bins: [], n }
 
-  let best = bins[0]
-  for (const b of bins) if (b.power > best.power) best = b
+  /*
+   * Only consider components that repeat at least three times in the recording.
+   *
+   * Otherwise the answer to "does this repeat" comes back as "yes, every 1360 px" on a
+   * 1360 px line, which is a single slow drift being described as a cycle. Real data
+   * produced exactly that, with a prominence high enough to look convincing. Detrending
+   * removes a straight tilt but not a gentle bow, and a bow is not a pattern.
+   */
+  const firstUsable = 3
+  if (bins.length <= firstUsable) return { peak: null, bins, n }
+  let best = bins[firstUsable]
+  for (let k = firstUsable; k < bins.length; k++) {
+    if (bins[k].power > best.power) best = bins[k]
+  }
   const powers = bins.map((b) => b.power).sort((a, b) => a - b)
   const median = powers[Math.floor(powers.length / 2)] || 1e-30
 
@@ -471,6 +611,9 @@ export interface Report {
   noise: Noise | null
   /** How the recording was read, since the two readings mean entirely different things. */
   treatedAs: 'held pen' | 'drawn line'
+  pressure: PressureStats
+  /** Samples dropped from the ends of a held recording as unsettled. */
+  trimmed: number
 }
 
 /** Everything worth knowing about one recorded stroke. */
@@ -498,10 +641,8 @@ export function report(
   const toScreen = (pts: RawSample[]): RawSample[] =>
     scale === 1 ? pts : pts.map((p) => ({ ...p, x: p.x * scale, y: p.y * scale }))
 
-  const raw = toScreen(capture.raw)
+  const all = toScreen(capture.raw)
   const drawnPts = toScreen(capture.drawn)
-  const d = deviation(raw)
-  const t = timing(raw)
   /*
    * Was the pen held still, or drawn along something?
    *
@@ -517,12 +658,24 @@ export function report(
    *
    * A caller that knows which test it ran says so and skips the guess entirely.
    */
-  const alongSpan = spread(d.along).peakToPeak
-  const acrossSpan = spread(d.error).peakToPeak
+  const first = deviation(all)
+  const alongSpan = spread(first.along).peakToPeak
+  const acrossSpan = spread(first.error).peakToPeak
   const stationary = options.stationary ?? (alongSpan < 8 * acrossSpan && alongSpan < 40)
 
+  // Only a held recording gets trimmed: on a drawn line every sample is signal, and the
+  // largest steps are the fast middle rather than a fumble.
+  const raw = stationary ? trimToSettled(all) : all
+  const d = stationary ? deviation(raw) : first
+  const t = timing(raw)
+
   const inTime = spectrum(d.error, d.t.map((ms) => ms / 1000)).peak
-  const inDistance = spectrum(d.error, d.travelled).peak
+  /*
+   * Distance means nothing for a held pen. Its travel is jitter, so resampling the error
+   * against it produces a staircase and a spectrum of that staircase — which real data
+   * reported as a 6 px pattern with a prominence in the hundred millions.
+   */
+  const inDistance = stationary ? null : spectrum(d.error, d.travelled).peak
 
   return {
     label: capture.label,
@@ -535,6 +688,8 @@ export function report(
     inDistance,
     bySpeed: stationary ? [] : errorBySpeed(d),
     noise: stationary ? stationaryNoise(raw) : null,
-    treatedAs: stationary ? 'held pen' : 'drawn line'
+    treatedAs: stationary ? 'held pen' : 'drawn line',
+    pressure: pressureStats(raw),
+    trimmed: all.length - raw.length
   }
 }

@@ -3,6 +3,7 @@ import { useEditorState } from '../useEditor'
 import { FloatingPanel } from './FloatingPanel'
 import { saveText } from '../platform'
 import { report, type Report } from '@engine/diag/analysis'
+import { ProfilerStage } from './ProfilerStage'
 
 /**
  * Measuring the tablet instead of arguing with it.
@@ -55,6 +56,11 @@ export function ProfilerPanel(): JSX.Element {
   const [test, setTest] = useState<Test>(TESTS[0])
   const [shown, setShown] = useState<Report | null>(null)
   const [saved, setSaved] = useState('')
+  /**
+   * The tests need the whole display: a ruler pass runs edge to edge, and a floating panel
+   * in the way makes the most important recordings impossible to take.
+   */
+  const [stage, setStage] = useState(false)
 
   const recorder = editor.recorder
   const captures = recorder.all()
@@ -75,6 +81,8 @@ export function ProfilerPanel(): JSX.Element {
     const where = await saveText(recorder.toJSON('all'), `vellum-tablet-${stamp}.json`)
     setSaved(typeof where === 'string' ? 'Saved' : where ? 'Downloaded' : '')
   }
+
+  if (stage) return <ProfilerStage onClose={() => setStage(false)} />
 
   return (
     <FloatingPanel
@@ -122,6 +130,9 @@ export function ProfilerPanel(): JSX.Element {
           {shown && <Readout r={shown} />}
 
           <div className="prof-actions">
+            <button className="btn prof-go" onClick={() => setStage(true)}>
+              Full screen…
+            </button>
             <button className="btn" onClick={save} disabled={captures.length === 0}>
               Save capture…
             </button>

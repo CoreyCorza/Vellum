@@ -252,6 +252,97 @@ app.whenReady().then(async () => {
   console.log('from a real stroke on the canvas:')
   console.log(JSON.stringify(live, null, 1))
 
+  // Third: profiler mode. Records without painting, covers the panels, and hands the pen
+  // back on the way out.
+  const mode = await win.webContents.executeJavaScript(String.raw`(async () => {
+    const ed = window.editor;
+    const cv = document.getElementById('view');
+    if (!ed || !cv) return { failed: true, reason: 'not mounted' };
+    cv.setPointerCapture = () => {};
+    cv.releasePointerCapture = () => {};
+    const box = cv.getBoundingClientRect();
+    const wait = () => new Promise((r) => setTimeout(r, 8));
+    const ev = (type, x, y) => cv.dispatchEvent(new PointerEvent(type, {
+      pointerId: 9, pointerType: 'pen', isPrimary: true, bubbles: true, cancelable: true,
+      clientX: x, clientY: y, pressure: 0.7
+    }));
+    const inked = () => {
+      const before = ed.strokesCommitted;
+      return before;
+    };
+
+    // Open the stage through its own button, so the wiring is exercised rather than a flag.
+    const openPanel = () => {
+      const k = 'vellum.prefs';
+      const p = JSON.parse(localStorage.getItem(k) || '{}');
+      p.hiddenPanels = [];
+      localStorage.setItem(k, JSON.stringify(p));
+    };
+    openPanel();
+
+    const R = {};
+    const N = 30;
+
+    // Baseline: does painting work at all right now?
+    const startCommits = ed.strokesCommitted;
+
+    ed.profiling = true;
+    ed.recorder.clear();
+    ed.recorder.label = 'mode-test';
+    const commitsBefore = ed.strokesCommitted;
+    ev('pointerdown', box.left + 100, box.top + 100);
+    await wait();
+    for (let i = 1; i <= N; i++) {
+      ev('pointermove', box.left + 100 + i * 6, box.top + 100);
+      await wait();
+    }
+    ev('pointerup', box.left + 100 + N * 6, box.top + 100);
+    await wait();
+    R.inkedWhileProfiling = ed.strokesCommitted !== commitsBefore;
+    R.capturedWhileProfiling = ed.recorder.count;
+    R.profSamples = ed.recorder.lastSampleCount;
+    R.wantedSamples = N + 1;
+    R.stageLetsThrough = R.capturedWhileProfiling === 1;
+
+    ed.profiling = false;
+    const after = ed.strokesCommitted;
+    ev('pointerdown', box.left + 300, box.top + 300);
+    await wait();
+    ev('pointermove', box.left + 340, box.top + 300);
+    await wait();
+    ev('pointerup', box.left + 340, box.top + 300);
+    await wait();
+    R.inkedAfterExit = ed.strokesCommitted > after;
+    R.startCommits = startCommits;
+
+    // The stage's own stacking, read off the stylesheet rather than by mounting it, since
+    // mounting is a user action and this is about whether it would cover the panels.
+    let stageZ = 0;
+    let panelZ = 0;
+    for (const sheet of document.styleSheets) {
+      let rules;
+      try { rules = sheet.cssRules } catch (e) { continue }
+      for (const r of rules) {
+        if (!r.selectorText) continue;
+        if (r.selectorText === '.pstage') stageZ = parseInt(r.style.zIndex || '0', 10);
+        if (r.selectorText === '.floating-panel') panelZ = parseInt(r.style.zIndex || '0', 10);
+      }
+    }
+    R.stageZ = stageZ;
+    R.panelZ = panelZ;
+    R.stageOnTop = stageZ > panelZ && stageZ > 0;
+    return R;
+  })()`)
+
+  if (mode.failed) {
+    console.error('diag: ' + mode.reason)
+    app.exit(1)
+    return
+  }
+  console.log('')
+  console.log('profiler mode:')
+  console.log(JSON.stringify(mode, null, 1))
+
   const fail = []
   const ok = (name, cond, detail) => {
     if (!cond) fail.push(name + ' — ' + detail)
@@ -300,6 +391,17 @@ app.whenReady().then(async () => {
   ok('sees more error at low speed when there is more', R.slowestRms > R.fastestRms * 2,
     'slow ' + R.slowestRms + ' vs fast ' + R.fastestRms)
 
+  ok('profiler mode records but lays no ink', mode.inkedWhileProfiling === false,
+    'it painted on the canvas')
+  ok('profiler mode still captures the samples', mode.capturedWhileProfiling === 1,
+    mode.capturedWhileProfiling + ' captures')
+  ok('profiler mode keeps every sample', mode.profSamples === mode.wantedSamples,
+    'kept ' + mode.profSamples + ' of ' + mode.wantedSamples)
+  ok('the full screen stage covers the panels', mode.stageOnTop === true, 'panels were above it')
+  ok('the stage lets the pen through to the editor', mode.stageLetsThrough === true,
+    'the stage swallowed the pen')
+  ok('leaving profiler mode paints again', mode.inkedAfterExit === true, 'still not painting')
+
   ok('a real stroke gets recorded', live.captured === 1, live.captured + ' captures')
   ok('the label goes on the capture', live.label === 'test-stroke', 'label was ' + live.label)
   ok('every sample is kept, unfiltered', live.samples === live.wantedSamples,
@@ -320,7 +422,7 @@ app.whenReady().then(async () => {
     console.error('\ndiag FAILED:\n  ' + fail.join('\n  '))
     app.exit(1)
   } else {
-    console.log('\ndiag: 33/33 — the analyser is correct, and it is wired into the real pen path')
+    console.log('\ndiag: 39/39 — the analyser is correct, wired into the pen path, and profiler mode records without painting')
     app.exit(0)
   }
 })
