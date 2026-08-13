@@ -9,9 +9,11 @@ import {
   isIdentityTransform,
   normalisedRect,
   unionRect,
+  applyTransform,
   type PixelTransform,
-  type SelectionSnapshot
-, type FloatingPixels } from './selection'
+  type SelectionSnapshot,
+  type FloatingPixels
+} from './selection'
 import { StrokeEngine } from './brush/stroke'
 import { NavDrag } from './gestures'
 import { GLStrokeRenderer } from './gl/strokeRenderer'
@@ -853,10 +855,14 @@ export class Editor {
     if (!this.selection.active) return
     const layer = this.doc.active
     if (layer.locked) return
-    const aabb = this.selection.rect
+    // The same box the handles are drawn on, so grabbing one works where it looks like it should.
+    const aabb = this.selection.outlineRect
     const handle = hitTransformHandle(doc, aabb, this.camera.scale)
     if (!handle) {
-      this.deselect()
+      /*
+       * A click that misses used to deselect. Nothing else in the app throws work away on a near
+       * miss, and a selection is often the result of careful work — Photoshop ignores this click.
+       */
       return
     }
     this.backup.copyFrom(layer.surface)
@@ -909,6 +915,26 @@ export class Editor {
   /** The floating pixels being dragged, for the compositor. Null when nothing is in flight. */
   get transformPreview(): Surface | null {
     return this.xfFloat ? this.xfPreview : null
+  }
+
+  /**
+   * The selection outline where it currently appears, in document space.
+   *
+   * Mid-drag that is the stored outline mapped through the in-flight affine, so the marching ants
+   * travel with the pixels instead of staying where the selection was made — which reads as the
+   * selection having been abandoned by its own contents.
+   *
+   * A getter rather than a line inside the drawing code so it can be tested without a screenshot.
+   */
+  get liveOutline(): readonly Pt[] {
+    const o = this.selection.outline
+    if (!this.xfFloat || isIdentityTransform(this.xfNow)) return o
+    return o.map((q) => applyTransform(q, this.xfNow))
+  }
+
+  /** Bounds the transform handles are drawn on, following the drag. */
+  get liveHandleRect(): Rect {
+    return boundsOfPoints(this.liveOutline, this.doc.width, this.doc.height)
   }
 
   endTransform(): void {
@@ -1374,14 +1400,20 @@ export class Editor {
        * thing you are about to work on and is the one place in an image editor where you least want a
        * veil. Every app of consequence marks a selection with its edge and nothing else.
        */
-      const outline = this.selection.outline
+      /*
+       * While a transform is in flight the outline is drawn through the live affine, so the ants
+       * travel with the pixels. They used to sit where the selection started until the drag ended,
+       * which makes it look like the selection has been left behind by its own contents.
+       */
+      const outline = this.liveOutline
       if (outline.length >= 3) {
         strokeMarchingPath(g, outline, lw, mode, w, h)
       } else {
         const r0 = this.selection.rect
         if (!rectIsEmpty(r0)) strokeMarchingRect(g, r0, lw)
       }
-      const r = this.selection.rect
+      // Handles on the shape's own box, not on the union with its mirrors. See outlineRect.
+      const r = this.liveHandleRect
       if (!rectIsEmpty(r) && (this.tool === 'transform' || this.xfDrag)) {
         drawTransformHandles(g, r, lw)
       }
@@ -1570,6 +1602,26 @@ function transformFromDrag(xf: TransformDrag, doc: Pt): PixelTransform {
  *
  * Two passes so it reads on any paper: black dashes, then white dashes in the gaps.
  */
+/** AABB of a point list, clipped to the document. */
+function boundsOfPoints(pts: readonly Pt[], w: number, h: number): Rect {
+  if (pts.length === 0) return { x: 0, y: 0, w: 0, h: 0 }
+  let x0 = Infinity
+  let y0 = Infinity
+  let x1 = -Infinity
+  let y1 = -Infinity
+  for (const q of pts) {
+    if (q.x < x0) x0 = q.x
+    if (q.y < y0) y0 = q.y
+    if (q.x > x1) x1 = q.x
+    if (q.y > y1) y1 = q.y
+  }
+  x0 = Math.max(0, Math.min(w, x0))
+  y0 = Math.max(0, Math.min(h, y0))
+  x1 = Math.max(0, Math.min(w, x1))
+  y1 = Math.max(0, Math.min(h, y1))
+  return { x: x0, y: y0, w: Math.max(0, x1 - x0), h: Math.max(0, y1 - y0) }
+}
+
 function strokeMarchingPath(
   g: CanvasRenderingContext2D,
   pts: readonly Pt[],

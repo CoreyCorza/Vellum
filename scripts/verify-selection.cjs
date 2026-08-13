@@ -264,6 +264,70 @@ const SCRIPT = `(() => {
   ed.deselect()
   ed.tool = 'brush'
 
+  /* ---- 6d. the four faults reported from actually using it ----------------
+   *
+   * Each of these was found by hand, not by a test, which is why they are here now.
+   */
+  reset()
+  ed.setBrush({ symmetry: 'none', size: 22, color: '#ff0000' })
+  stroke(line(300, 300, 700, 300, 40))
+  ed.addLayer()
+  ed.setBrush({ color: '#00ff00' })
+  stroke(line(300, 500, 700, 500, 40))
+  const inkOn = (li, x, y) => ed.doc.layers[li].surface.sample(Math.round(x), Math.round(y))[3] > 20
+  ed.tool = 'transform'
+  // A selection covering BOTH strokes, so a transform that reached other layers would show.
+  ed.selectRect(280, 280, 440, 240)
+  ed.beginTransform({ x: 500, y: 400 })
+  ed.extendTransform({ x: 500, y: 700 })
+  ed.endTransform()
+  R.layerScope = {
+    onlyActiveMoved: !inkOn(1, 500, 500) && inkOn(1, 500, 800),
+    othersUntouched: inkOn(0, 500, 300) && !inkOn(0, 500, 600),
+    stillSelected: ed.selection.active
+  }
+
+  // The ants have to travel with the pixels, not stay where the selection was made.
+  reset()
+  ed.tool = 'transform'
+  ed.selectRect(300, 300, 200, 100)
+  const antsAt = () => ed.liveOutline.map((q) => ({ x: q.x, y: q.y }))
+  const antsStart = antsAt()
+  ed.beginTransform({ x: 400, y: 350 })
+  ed.extendTransform({ x: 600, y: 550 })
+  const antsMid = antsAt()
+  ed.endTransform()
+  R.antsFollow = {
+    duringDrag: Math.abs(antsMid[0].x - antsStart[0].x) > 50,
+    afterCommit: Math.abs(antsAt()[0].x - antsStart[0].x) > 50
+  }
+
+  // A click that misses the handles must not throw the selection away.
+  ed.selectRect(300, 300, 100, 100)
+  ed.beginTransform({ x: 900, y: 900 })
+  R.strayClickKeepsSelection = ed.selection.active
+  ed.endTransform()
+
+  // Under symmetry the handles belong on the shape, not on its union with the mirror.
+  ed.deselect()
+  ed.setBrush({ symmetry: 'x' })
+  ed.selectRect(300, 300, 150, 150)
+  const unionW = ed.selection.rect.w
+  const handleW = ed.selection.outlineRect.w
+  ed.beginTransform({ x: 350, y: 350 })
+  ed.extendTransform({ x: 420, y: 420 })
+  const handlesMid = ed.liveHandleRect
+  ed.endTransform()
+  R.symHandles = {
+    unionIsWide: unionW > 800,
+    handlesOnShape: Math.abs(handleW - 150) < 4,
+    handlesFollow: Math.abs(handlesMid.x - 370) < 4 && Math.abs(handlesMid.w - 150) < 4,
+    stillActive: ed.selection.active
+  }
+  ed.setBrush({ symmetry: 'none' })
+  ed.tool = 'brush'
+  ed.deselect()
+
   // ---- 7. deselect / select-all -------------------------------------------
   reset()
   ed.selectRect(10, 10, 40, 40)
@@ -290,7 +354,12 @@ const SCRIPT = `(() => {
     R.deselect && R.selectAll && R.deselectAfterAll &&
     R.noResidue.untouchedWhileDragging && R.noResidue.returnsToOriginal &&
     R.noResidue.stillSelected && R.roundTrips.clean &&
-    R.outline.hasMany && R.outline.notABox
+    R.outline.hasMany && R.outline.notABox &&
+    R.layerScope.onlyActiveMoved && R.layerScope.othersUntouched && R.layerScope.stillSelected &&
+    R.antsFollow.duringDrag && R.antsFollow.afterCommit &&
+    R.strayClickKeepsSelection &&
+    R.symHandles.unionIsWide && R.symHandles.handlesOnShape &&
+    R.symHandles.handlesFollow && R.symHandles.stillActive
   )
   return R
 })()`

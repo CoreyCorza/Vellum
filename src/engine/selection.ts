@@ -101,6 +101,21 @@ export class Selection {
     return this._outline
   }
 
+  /**
+   * Bounds of the shape as drawn, before symmetry mirrors it.
+   *
+   * This is what transform handles belong on. `rect` covers every selected pixel, which under
+   * symmetry means one box spanning both halves and most of the document — a 150 px selection
+   * reported bounds 1448 px wide, so the handles ended up scattered around the far edges of the
+   * canvas with nothing near the thing being dragged.
+   */
+  get outlineRect(): Rect {
+    if (this._outline.length === 0) return this.rect
+    const b = new Bounds()
+    for (const q of this._outline) b.add(q.x, q.y)
+    return b.toRect(this.width, this.height, 0)
+  }
+
   /** Axis-aligned bounds of currently selected pixels, clipped to the document. */
   get rect(): Rect {
     return this.bounds.toRect(this.width, this.height, 0)
