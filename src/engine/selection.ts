@@ -26,10 +26,27 @@ export function isIdentityTransform(t: PixelTransform): boolean {
   return t.dx === 0 && t.dy === 0 && t.sx === 1 && t.sy === 1
 }
 
+/**
+ * Selected pixels lifted off a layer, waiting to be put back somewhere else.
+ *
+ * Cropped rather than document-sized: a transform preview redraws this on every pointer move, and a
+ * small blit is free where a full-canvas one is not.
+ */
+export interface FloatingPixels {
+  pixels: HTMLCanvasElement
+  mask: HTMLCanvasElement
+  /** Where these pixels came from — the canonical half's bounds under symmetry. */
+  from: Rect
+  /** The whole selection's bounds, both halves, for sizing an undo patch. */
+  selectedRect: Rect
+}
+
 export interface SelectionSnapshot {
   active: boolean
   rect: Rect
   mask: Surface | null
+  /** Carried so undo restores the shape of the ants, not just what is selected. */
+  outline: Pt[]
 }
 
 const MASK_ON = '#ffffff'
@@ -51,6 +68,17 @@ export class Selection {
   readonly height: number
 
   private _active = false
+  /**
+   * The selection's outline in document space, as a polygon.
+   *
+   * The mask is the truth for what is selected; this exists only so the marching ants can trace the
+   * actual shape. Without it an ellipse or a lasso is drawn as its bounding box, which tells you the
+   * wrong thing about what you selected.
+   *
+   * One representation for all three shapes — a rectangle is four points, an ellipse is sampled —
+   * so transforming an outline is the same code whatever made it.
+   */
+  private _outline: Pt[] = []
   private readonly bounds = new Bounds()
   /** Scratch canvases, document-sized, reused for symmetry and transforms. */
   private readonly workA: Surface
@@ -66,6 +94,11 @@ export class Selection {
 
   get active(): boolean {
     return this._active
+  }
+
+  /** The outline in document space. Empty when nothing is selected. */
+  get outline(): readonly Pt[] {
+    return this._outline
   }
 
   /** Axis-aligned bounds of currently selected pixels, clipped to the document. */
@@ -84,23 +117,25 @@ export class Selection {
   clear(): void {
     this.mask.clear()
     this.bounds.reset()
+    this._outline = []
     this._active = false
   }
 
   snapshot(): SelectionSnapshot {
     if (!this._active) {
-      return { active: false, rect: { x: 0, y: 0, w: 0, h: 0 }, mask: null }
+      return { active: false, rect: { x: 0, y: 0, w: 0, h: 0 }, mask: null, outline: [] }
     }
     const rect = this.rect
     if (rectIsEmpty(rect)) {
-      return { active: false, rect, mask: null }
+      return { active: false, rect, mask: null, outline: [] }
     }
-    return { active: true, rect, mask: this.mask.extract(rect) }
+    return { active: true, rect, mask: this.mask.extract(rect), outline: this._outline.map((q) => ({ ...q })) }
   }
 
   restore(snap: SelectionSnapshot): void {
     this.mask.clear()
     this.bounds.reset()
+    this._outline = snap.outline ? snap.outline.map((q) => ({ ...q })) : []
     if (!snap.active || !snap.mask || rectIsEmpty(snap.rect)) {
       this._active = false
       return
@@ -112,6 +147,12 @@ export class Selection {
 
   selectAll(): void {
     this.mask.fill(MASK_ON)
+    this._outline = [
+      { x: 0, y: 0 },
+      { x: this.width, y: 0 },
+      { x: this.width, y: this.height },
+      { x: 0, y: this.height }
+    ]
     this.bounds.reset()
     this.bounds.add(0, 0)
     this.bounds.add(this.width, this.height)
@@ -128,6 +169,12 @@ export class Selection {
     }
     this.mask.ctx.fillStyle = MASK_ON
     this.mask.ctx.fillRect(r.x, r.y, r.w, r.h)
+    this._outline = [
+      { x: r.x, y: r.y },
+      { x: r.x + r.w, y: r.y },
+      { x: r.x + r.w, y: r.y + r.h },
+      { x: r.x, y: r.y + r.h }
+    ]
     this.bounds.addRect(r)
     this.applySymmetry(symmetry)
     this._active = !this.bounds.isEmpty
@@ -148,6 +195,15 @@ export class Selection {
     c.ellipse(r.x + r.w / 2, r.y + r.h / 2, r.w / 2, r.h / 2, 0, 0, Math.PI * 2)
     c.fill()
     c.restore()
+    // Sampled finely enough that the ants read as a curve at any sane zoom.
+    const steps = 96
+    const mx = r.x + r.w / 2
+    const my = r.y + r.h / 2
+    this._outline = []
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * Math.PI * 2
+      this._outline.push({ x: mx + (r.w / 2) * Math.cos(a), y: my + (r.h / 2) * Math.sin(a) })
+    }
     this.bounds.addRect(r)
     this.applySymmetry(symmetry)
     this._active = !this.bounds.isEmpty
@@ -173,6 +229,7 @@ export class Selection {
     c.closePath()
     c.fill()
     c.restore()
+    this._outline = points.map((q) => ({ x: q.x, y: q.y }))
     this.applySymmetry(symmetry)
     this._active = !this.bounds.isEmpty
   }
@@ -190,30 +247,85 @@ export class Selection {
   }
 
   /**
-   * Move / scale the selected pixels of `layer` and the mask together.
-   * With symmetry, the affine is applied to the canonical half and the result
-   * is re-mirrored about the document centre so both sides stay in lockstep.
+   * Cut the selected pixels out of `layer` and hand them back as a floating buffer.
+   *
+   * Called once, when a transform gesture starts. Everything after that is drawing: the layer
+   * already has its hole, the pixels are in hand, and moving them is a matter of where they get
+   * drawn rather than of editing the document. That is what makes a transform preview free and
+   * artefact-free — nothing is written to the layer until the gesture ends, so there is no
+   * partially-applied state to leave residue behind.
+   *
+   * With symmetry on, only the canonical half is lifted. The other half is not carried around; it
+   * is regenerated by mirroring whatever the canonical half becomes, which is what keeps the two
+   * sides in lockstep instead of both sliding the same way.
+   *
+   * The buffer is cropped to the selection rather than being document-sized, so redrawing it as the
+   * pointer moves costs a small blit instead of a full canvas.
    */
-  transform(layer: Surface, t: PixelTransform, symmetry: SymmetryMode): void {
-    if (!this._active) return
-    const xf = snappedTransform(t)
+  lift(layer: Surface, symmetry: SymmetryMode): FloatingPixels | null {
+    if (!this._active) return null
+    const from = this.rect
+    if (rectIsEmpty(from)) return null
 
     this.workA.copyFrom(layer)
     this.workA.draw(this.mask, 1, 'destination-in')
+    restrictCanonical(this.workA, symmetry)
+
+    this.workB.copyFrom(this.mask)
+    restrictCanonical(this.workB, symmetry)
+
+    // Cropped to the canonical half's own bounds, which after restriction may be smaller than the
+    // whole selection.
+    const canon = canonicalRect(from, symmetry, this.width, this.height)
+    if (rectIsEmpty(canon)) return null
+
+    const pixels = cropped(this.workA, canon)
+    const mask = cropped(this.workB, canon)
+
+    // The hole. Cut with the FULL mask, not the canonical half, so both sides lift together.
     layer.draw(this.mask, 1, 'destination-out')
 
-    restrictCanonical(this.workA, symmetry)
-    this.workB.clear()
-    blitAffine(this.workA, this.workB, xf)
-    blitMirrors(this.workB, this.workB, symmetry)
+    return { pixels, mask, from: canon, selectedRect: from }
+  }
+
+  /**
+   * Draw a floating buffer, transformed, into `dest`. Used for the live preview and for the commit,
+   * so what is shown during the drag and what lands at the end cannot disagree.
+   */
+  renderFloat(
+    dest: Surface,
+    f: FloatingPixels,
+    t: PixelTransform,
+    symmetry: SymmetryMode
+  ): void {
+    const xf = snappedTransform(t)
+    dest.clear()
+    blitFloat(f.pixels, f.from, dest, xf)
+    blitMirrors(dest, dest, symmetry)
+  }
+
+  /**
+   * Stamp the float into the layer for good and move the mask to match.
+   *
+   * The mask is transformed by the same affine as the pixels, so the selection stays around the
+   * content it belongs to and a second drag starts from where the first one finished.
+   */
+  commit(
+    layer: Surface,
+    f: FloatingPixels,
+    t: PixelTransform,
+    symmetry: SymmetryMode
+  ): void {
+    const xf = snappedTransform(t)
+
+    this.renderFloat(this.workB, f, xf, symmetry)
     layer.draw(this.workB)
 
-    this.workA.copyFrom(this.mask)
-    restrictCanonical(this.workA, symmetry)
     this.mask.clear()
-    blitAffine(this.workA, this.mask, xf)
+    blitFloat(f.mask, f.from, this.mask, xf)
     blitMirrors(this.mask, this.mask, symmetry)
 
+    this._outline = this._outline.map((q) => applyTransform(q, xf))
     this.transformBounds(xf, symmetry)
     this._active = !this.bounds.isEmpty
   }
@@ -319,18 +431,6 @@ function restrictCanonical(s: Surface, mode: SymmetryMode): void {
   if (mode === 'y' || mode === 'xy') s.clear({ x: 0, y: cy, w, h: h - cy })
 }
 
-function blitAffine(src: Surface, dest: Surface, t: PixelTransform): void {
-  const c = dest.ctx
-  c.save()
-  c.imageSmoothingEnabled = t.sx !== 1 || t.sy !== 1
-  c.imageSmoothingQuality = 'high'
-  c.translate(t.ox + t.dx, t.oy + t.dy)
-  c.scale(t.sx, t.sy)
-  c.translate(-t.ox, -t.oy)
-  c.drawImage(src.canvas, 0, 0)
-  c.restore()
-}
-
 /**
  * OR `src` (pre-mirror) into `dest` at every symmetry copy. `src` may be `dest`
  * itself — we snapshot first in that case via the fact that the caller passes
@@ -385,4 +485,54 @@ function snapshotCanvas(s: Surface): HTMLCanvasElement {
   x.drawImage(s.canvas, 0, 0)
   x.restore()
   return mirrorSnap
+}
+
+/** The part of `r` that survives restriction to the canonical half. */
+function canonicalRect(r: Rect, mode: SymmetryMode, w: number, h: number): Rect {
+  if (mode === 'none') return r
+  const cx = Math.ceil(w / 2)
+  const cy = Math.ceil(h / 2)
+  let { x, y } = r
+  let right = r.x + r.w
+  let bottom = r.y + r.h
+  if (mode === 'x' || mode === 'xy') right = Math.min(right, cx)
+  if (mode === 'y' || mode === 'xy') bottom = Math.min(bottom, cy)
+  x = Math.max(0, x)
+  y = Math.max(0, y)
+  return { x, y, w: Math.max(0, right - x), h: Math.max(0, bottom - y) }
+}
+
+/** A cropped copy of part of a surface, as a plain canvas. */
+function cropped(s: Surface, r: Rect): HTMLCanvasElement {
+  const c = document.createElement('canvas')
+  c.width = Math.max(1, Math.round(r.w))
+  c.height = Math.max(1, Math.round(r.h))
+  const x = c.getContext('2d')
+  if (!x) throw new Error('Selection: could not crop')
+  x.drawImage(s.canvas, r.x, r.y, c.width, c.height, 0, 0, c.width, c.height)
+  return c
+}
+
+/**
+ * Draw a cropped float back into document space under an affine.
+ *
+ * The affine is defined on document coordinates, so the crop's own offset has to be applied inside
+ * it rather than added afterwards — otherwise scaling moves the piece relative to where it was cut
+ * from, and the content creeps away from the selection outline as you resize.
+ */
+function blitFloat(
+  src: HTMLCanvasElement,
+  from: Rect,
+  dest: Surface,
+  t: PixelTransform
+): void {
+  const c = dest.ctx
+  c.save()
+  c.imageSmoothingEnabled = t.sx !== 1 || t.sy !== 1
+  c.imageSmoothingQuality = 'high'
+  c.translate(t.ox + t.dx, t.oy + t.dy)
+  c.scale(t.sx, t.sy)
+  c.translate(-t.ox, -t.oy)
+  c.drawImage(src, from.x, from.y)
+  c.restore()
 }

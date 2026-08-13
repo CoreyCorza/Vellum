@@ -178,10 +178,10 @@ export function Rail({ onExport }: { onExport: () => void }): JSX.Element {
       {tool('eraser', 'Eraser (E)')}
       {tool('picker', 'Eyedropper (I, or hold Alt)')}
       <div className="rail-sep" />
-      {tool('select-rect', 'Rectangular selection (R)')}
-      {tool('select-ellipse', 'Elliptical selection (O)')}
+      {tool('select-rect', 'Rectangular selection (M)')}
+      {tool('select-ellipse', 'Elliptical selection (M again)')}
       {tool('select-lasso', 'Lasso selection (L)')}
-      {tool('transform', 'Transform selection (V)')}
+      {tool('transform', 'Transform selection (V, or Ctrl+T)')}
       <div className="rail-sep" />
       <button
         className="tool"

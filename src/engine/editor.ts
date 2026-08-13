@@ -11,11 +11,11 @@ import {
   unionRect,
   type PixelTransform,
   type SelectionSnapshot
-} from './selection'
+, type FloatingPixels } from './selection'
 import { StrokeEngine } from './brush/stroke'
 import { NavDrag } from './gestures'
 import { GLStrokeRenderer } from './gl/strokeRenderer'
-import { DEFAULT_BRUSH, type BrushSettings } from './brush/settings'
+import { DEFAULT_BRUSH, type BrushSettings, type SymmetryMode } from './brush/settings'
 import { BUILT_IN_PRESETS, presetSettings, settingsDiffer, type BrushPreset } from './brush/presets'
 import type {
   BlendMode,
@@ -327,6 +327,22 @@ export class Editor {
   private xfSelBefore: SelectionSnapshot | null = null
   private xfStartRect: Rect = { x: 0, y: 0, w: 0, h: 0 }
   private xfDirty = false
+  /**
+   * The lifted pixels for an in-flight transform, and where they are being drawn.
+   *
+   * A transform used to rewrite the layer on every pointer move: restore the whole document from a
+   * backup, cut the selection out again, re-apply the affine. Correct in principle and a
+   * document-sized copy plus several full-canvas blits per event in practice, which is both slow and
+   * a lot of half-finished state to leave lying around.
+   *
+   * Now the pixels are cut out once when the gesture starts and the layer is not touched again until
+   * it ends. Moving them changes where they are DRAWN, not what the document holds, so there is no
+   * partially-applied edit that could leave residue behind — the artefacts are gone by construction
+   * rather than by being chased.
+   */
+  private xfFloat: FloatingPixels | null = null
+  private xfNow: PixelTransform = IDENTITY_TRANSFORM
+  private xfPreview: Surface | null = null
 
   private display: HTMLCanvasElement | null = null
   private dsp: CanvasRenderingContext2D | null = null
@@ -846,6 +862,11 @@ export class Editor {
     this.backup.copyFrom(layer.surface)
     this.xfSelBefore = this.selection.snapshot()
     this.xfStartRect = { ...aabb }
+    // The one and only edit to the layer until the gesture ends: the pixels come out.
+    this.xfFloat = this.selection.lift(layer.surface, this.brush.symmetry)
+    if (!this.xfFloat) return
+    this.xfNow = IDENTITY_TRANSFORM
+    this.refreshTransformPreview()
     const cx = this.doc.width / 2
     const cy = this.doc.height / 2
     const mode = this.brush.symmetry
@@ -862,28 +883,52 @@ export class Editor {
 
   extendTransform(doc: Pt): void {
     const xf = this.xfDrag
-    const before = this.xfSelBefore
-    if (!xf || !before) return
-    const layer = this.doc.active
-    layer.surface.copyFrom(this.backup)
-    this.selection.restore(before)
-    const t = transformFromDrag(xf, doc)
-    if (!isIdentityTransform(t)) {
-      this.selection.transform(layer.surface, t, this.brush.symmetry)
-      this.xfDirty = true
-    }
-    this.contentChanged()
+    if (!xf || !this.xfFloat) return
+    this.xfNow = transformFromDrag(xf, doc)
+    if (!isIdentityTransform(this.xfNow)) this.xfDirty = true
+    // Redraws the floating pixels only. The layer is not touched, so this costs one small blit
+    // rather than a document-sized copy, and nothing has to be undone if the gesture is abandoned.
+    this.refreshTransformPreview()
     this.invalidate()
+  }
+
+  /**
+   * Re-render the floating pixels where they currently sit.
+   *
+   * Kept in a document-sized buffer and handed to the compositor the same way an in-flight brush
+   * stroke is, so the preview goes through the identical scaling and mip path as everything else and
+   * cannot look different from the committed result.
+   */
+  private refreshTransformPreview(): void {
+    const f = this.xfFloat
+    if (!f) return
+    if (!this.xfPreview) this.xfPreview = new Surface(this.doc.width, this.doc.height)
+    this.selection.renderFloat(this.xfPreview, f, this.xfNow, this.brush.symmetry)
+  }
+
+  /** The floating pixels being dragged, for the compositor. Null when nothing is in flight. */
+  get transformPreview(): Surface | null {
+    return this.xfFloat ? this.xfPreview : null
   }
 
   endTransform(): void {
     const xf = this.xfDrag
     const selBefore = this.xfSelBefore
     if (!xf || !selBefore) return
+    const f = this.xfFloat
     this.xfDrag = null
     this.xfSelBefore = null
+    this.xfFloat = null
     const layer = this.doc.active
+    if (!f) {
+      this.invalidate()
+      return
+    }
+    // Put the pixels down exactly where the preview showed them, in one edit.
+    this.selection.commit(layer.surface, f, this.xfNow, this.brush.symmetry)
     if (!this.xfDirty) {
+      // Nothing moved, but the pixels were lifted, so they still have to go back.
+      this.contentChanged()
       this.invalidate()
       return
     }
@@ -935,10 +980,14 @@ export class Editor {
       return
     }
     if (this.xfDrag && this.xfSelBefore) {
+      // The backup is the layer as it was before the pixels were lifted, so this restores the hole
+      // and its contents together.
       this.doc.active.surface.copyFrom(this.backup)
       this.selection.restore(this.xfSelBefore)
       this.xfDrag = null
       this.xfSelBefore = null
+      this.xfFloat = null
+      this.xfDirty = false
       this.contentChanged()
       this.invalidate()
       this.ui.emit()
@@ -957,7 +1006,10 @@ export class Editor {
     if (rectIsEmpty(union)) return
     const beforePix = layer.surface.extract(union)
     const selBefore = this.selection.snapshot()
-    this.selection.transform(layer.surface, t, this.brush.symmetry)
+    // Lift and put down, the same path a drag takes, so a nudge and a drag cannot behave differently.
+    const f = this.selection.lift(layer.surface, this.brush.symmetry)
+    if (!f) return
+    this.selection.commit(layer.surface, f, t, this.brush.symmetry)
     const selAfter = this.selection.snapshot()
     this.history.push(
       new CompoundCommand('Transform', [
@@ -1071,7 +1123,8 @@ export class Editor {
       strokeSurface,
       strokeAlpha,
       this.strokes.erasing ? 'destination-out' : 'source-over',
-      this.selection.active ? this.selection.mask : null
+      this.selection.active ? this.selection.mask : null,
+      this.transformPreview
     )
 
     g.setTransform(1, 0, 0, 1, 0, 0)
@@ -1316,69 +1369,92 @@ export class Editor {
     const { width: w, height: h } = this.doc
 
     if (this.selection.active) {
-      g.save()
-      g.globalAlpha = 0.22
-      g.drawImage(this.selection.mask.canvas, 0, 0)
-      g.restore()
+      /*
+       * The outline only. There was a 22% white wash over the selected pixels, which hides the very
+       * thing you are about to work on and is the one place in an image editor where you least want a
+       * veil. Every app of consequence marks a selection with its edge and nothing else.
+       */
+      const outline = this.selection.outline
+      if (outline.length >= 3) {
+        strokeMarchingPath(g, outline, lw, mode, w, h)
+      } else {
+        const r0 = this.selection.rect
+        if (!rectIsEmpty(r0)) strokeMarchingRect(g, r0, lw)
+      }
       const r = this.selection.rect
-      if (!rectIsEmpty(r)) {
-        strokeMarchingRect(g, r, lw)
-        if (this.tool === 'transform' || this.xfDrag) drawTransformHandles(g, r, lw)
+      if (!rectIsEmpty(r) && (this.tool === 'transform' || this.xfDrag)) {
+        drawTransformHandles(g, r, lw)
       }
     }
 
     const d = this.selDrag
     if (d) {
-      g.save()
-      g.lineWidth = lw
-      g.strokeStyle = 'rgba(255,255,255,.9)'
-      g.setLineDash([4 / scale, 4 / scale])
-      const drawShape = (): void => {
-        if (d.mode === 'select-lasso') {
-          if (d.points.length < 1) return
+      // Black dashes, then white dashes in the gaps, so the outline reads on any paper.
+      for (const pass of [
+        { colour: 'rgba(0,0,0,.75)', offset: 0 },
+        { colour: 'rgba(255,255,255,.95)', offset: 4 / scale }
+      ]) {
+        g.save()
+        g.strokeStyle = pass.colour
+        g.lineDashOffset = pass.offset
+        g.save()
+        g.lineWidth = lw
+        g.setLineDash([4 / scale, 4 / scale])
+        /*
+         * Two passes, black dashes then white ones in the gaps.
+         *
+         * A single white outline is invisible on white paper, which is the default document — this
+         * was drawn in white only and could not be seen at all while making a selection. A pair of
+         * offset dashes shows up on anything, which is why every editor's ants look like that.
+         */
+        const drawShape = (): void => {
+          if (d.mode === 'select-lasso') {
+            if (d.points.length < 1) return
+            g.beginPath()
+            g.moveTo(d.points[0].x, d.points[0].y)
+            for (let i = 1; i < d.points.length; i++) g.lineTo(d.points[i].x, d.points[i].y)
+            g.stroke()
+            return
+          }
+          const r = normalisedRect(
+            d.origin.x,
+            d.origin.y,
+            d.current.x - d.origin.x,
+            d.current.y - d.origin.y
+          )
           g.beginPath()
-          g.moveTo(d.points[0].x, d.points[0].y)
-          for (let i = 1; i < d.points.length; i++) g.lineTo(d.points[i].x, d.points[i].y)
+          if (d.mode === 'select-ellipse') {
+            g.ellipse(r.x + r.w / 2, r.y + r.h / 2, Math.max(0.5, r.w / 2), Math.max(0.5, r.h / 2), 0, 0, Math.PI * 2)
+          } else {
+            g.rect(r.x, r.y, r.w, r.h)
+          }
           g.stroke()
-          return
         }
-        const r = normalisedRect(
-          d.origin.x,
-          d.origin.y,
-          d.current.x - d.origin.x,
-          d.current.y - d.origin.y
-        )
-        g.beginPath()
-        if (d.mode === 'select-ellipse') {
-          g.ellipse(r.x + r.w / 2, r.y + r.h / 2, Math.max(0.5, r.w / 2), Math.max(0.5, r.h / 2), 0, 0, Math.PI * 2)
-        } else {
-          g.rect(r.x, r.y, r.w, r.h)
+        drawShape()
+        if (mode === 'x' || mode === 'xy') {
+          g.save()
+          g.translate(w, 0)
+          g.scale(-1, 1)
+          drawShape()
+          g.restore()
         }
-        g.stroke()
-      }
-      drawShape()
-      if (mode === 'x' || mode === 'xy') {
-        g.save()
-        g.translate(w, 0)
-        g.scale(-1, 1)
-        drawShape()
+        if (mode === 'y' || mode === 'xy') {
+          g.save()
+          g.translate(0, h)
+          g.scale(1, -1)
+          drawShape()
+          g.restore()
+        }
+        if (mode === 'xy') {
+          g.save()
+          g.translate(w, h)
+          g.scale(-1, -1)
+          drawShape()
+          g.restore()
+        }
+        g.restore()
         g.restore()
       }
-      if (mode === 'y' || mode === 'xy') {
-        g.save()
-        g.translate(0, h)
-        g.scale(1, -1)
-        drawShape()
-        g.restore()
-      }
-      if (mode === 'xy') {
-        g.save()
-        g.translate(w, h)
-        g.scale(-1, -1)
-        drawShape()
-        g.restore()
-      }
-      g.restore()
     }
   }
 
@@ -1483,6 +1559,55 @@ function transformFromDrag(xf: TransformDrag, doc: Pt): PixelTransform {
     sy = clamp(Math.abs(doc.y - oy) / hh, 0.05, 32)
   }
   return { dx: 0, dy: 0, sx, sy, ox, oy }
+}
+
+/**
+ * Marching ants along an arbitrary outline, including its symmetry mirrors.
+ *
+ * Traces the shape that was actually selected. Drawing the bounding box instead — which is what this
+ * did — tells you an ellipse is a rectangle and a lasso is a rectangle, which is wrong about the one
+ * thing a selection outline exists to communicate.
+ *
+ * Two passes so it reads on any paper: black dashes, then white dashes in the gaps.
+ */
+function strokeMarchingPath(
+  g: CanvasRenderingContext2D,
+  pts: readonly Pt[],
+  lw: number,
+  mode: SymmetryMode,
+  docW: number,
+  docH: number
+): void {
+  const trace = (): void => {
+    g.beginPath()
+    g.moveTo(pts[0].x, pts[0].y)
+    for (let i = 1; i < pts.length; i++) g.lineTo(pts[i].x, pts[i].y)
+    g.closePath()
+    g.stroke()
+  }
+  const mirrors: [number, number, number, number][] = [[0, 0, 1, 1]]
+  if (mode === 'x' || mode === 'xy') mirrors.push([docW, 0, -1, 1])
+  if (mode === 'y' || mode === 'xy') mirrors.push([0, docH, 1, -1])
+  if (mode === 'xy') mirrors.push([docW, docH, -1, -1])
+
+  g.save()
+  g.lineWidth = lw
+  g.setLineDash([4 * lw, 4 * lw])
+  for (const pass of [
+    { colour: 'rgba(0,0,0,.75)', offset: 0 },
+    { colour: 'rgba(255,255,255,.95)', offset: 4 * lw }
+  ]) {
+    g.strokeStyle = pass.colour
+    g.lineDashOffset = pass.offset
+    for (const [tx, ty, sx, sy] of mirrors) {
+      g.save()
+      g.translate(tx, ty)
+      g.scale(sx, sy)
+      trace()
+      g.restore()
+    }
+  }
+  g.restore()
 }
 
 function strokeMarchingRect(g: CanvasRenderingContext2D, r: Rect, lw: number): void {

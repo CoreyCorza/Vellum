@@ -152,6 +152,9 @@ export function App(): JSX.Element {
         } else if (k === 'd') {
           e.preventDefault()
           editor.deselect()
+        } else if (k === 't') {
+          e.preventDefault()
+          editor.setTool('transform')
         }
         return
       }
@@ -179,8 +182,17 @@ export function App(): JSX.Element {
           }
           break
         case 'i': editor.setTool('picker'); break
-        case 'r': editor.setTool('select-rect'); break
-        case 'o': editor.setTool('select-ellipse'); break
+        /*
+         * Photoshop's keys, because that is what the muscle memory is.
+         *
+         * R and O were bound to the marquees and V to transform, which are Rotate, nothing, and Move
+         * elsewhere. M is the marquee and pressing it again swaps rectangle for ellipse, the way
+         * Shift+M cycles them there; L is the lasso; Ctrl+T is free transform, with V kept as an
+         * alias since Move is what dragging inside a selection does.
+         */
+        case 'm':
+          editor.setTool(editor.tool === 'select-rect' ? 'select-ellipse' : 'select-rect')
+          break
         case 'l': editor.setTool('select-lasso'); break
         case 'v': editor.setTool('transform'); break
         case 'escape': editor.cancelSelectionGesture(); break

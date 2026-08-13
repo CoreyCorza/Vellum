@@ -45,7 +45,15 @@ export class Compositor {
     strokeBuf: DrawSource | null,
     strokeAlpha: number,
     strokeOp: GlobalCompositeOperation,
-    clip?: DrawSource | null
+    clip?: DrawSource | null,
+    /**
+     * Pixels lifted off the active layer and being dragged around.
+     *
+     * Composited here rather than drawn over the top of everything, so a transform preview goes
+     * through the same layer opacity, blend mode and downscaling path as the pixels it came from —
+     * otherwise the piece being moved looks subtly different from the hole it left.
+     */
+    floating?: DrawSource | null
   ): Surface {
     const activeIndex = doc.activeIndex
 
@@ -64,9 +72,10 @@ export class Compositor {
 
     const active = doc.active
     if (active.visible && active.opacity > 0) {
-      if (strokeBuf) {
+      if (strokeBuf || floating) {
         this.scratch.copyFrom(active.surface)
-        this.scratch.draw(strokeBuf, strokeAlpha, strokeOp, undefined, clip)
+        if (floating) this.scratch.draw(floating)
+        if (strokeBuf) this.scratch.draw(strokeBuf, strokeAlpha, strokeOp, undefined, clip)
         this.out.draw(this.scratch, active.opacity, blendToComposite(active.blend))
       } else {
         this.out.draw(active.surface, active.opacity, blendToComposite(active.blend))

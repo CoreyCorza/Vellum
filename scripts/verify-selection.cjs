@@ -174,6 +174,96 @@ const SCRIPT = `(() => {
     lockstep: ink(leftNew, 690) && ink(rightNew, 690)
   }
 
+  /* ---- 6b. a drag leaves nothing behind ----------------------------------
+   *
+   * The reported symptom was artefacts all over the canvas after transforming. The cause was that a
+   * drag rewrote the layer on every pointer move, so any pointer event could leave a half-applied
+   * edit behind. These are the checks that would have caught it.
+   *
+   * The strongest one is that the layer must not change AT ALL while the pointer is moving. Pixels
+   * are lifted once when the gesture starts and put down once when it ends; everything between is
+   * drawing. If that holds, residue is impossible rather than merely absent today.
+   */
+  reset()
+  ed.setBrush({ symmetry: 'none', color: '#ff0000', size: 20 })
+  stroke(line(300, 300, 700, 300, 60))
+  const pristine = ed.doc.active.surface.extract({ x: 0, y: 0, w: W, h: H })
+  const sameAsPristine = () => {
+    const now = ed.doc.active.surface.extract({ x: 0, y: 0, w: W, h: H })
+    const a = pristine.ctx.getImageData(0, 0, W, H).data
+    const b = now.ctx.getImageData(0, 0, W, H).data
+    let diff = 0
+    for (let i = 3; i < a.length; i += 4) if (Math.abs(a[i] - b[i]) > 8) diff++
+    return diff
+  }
+
+  ed.tool = 'transform'
+  ed.selectRect(280, 280, 440, 60)
+  ed.beginTransform({ x: 280, y: 280 })
+  const afterLift = ed.doc.active.surface.extract({ x: 0, y: 0, w: W, h: H })
+  // Drag a long way around, many events, then come back to where it started.
+  for (let i = 0; i < 40; i++) ed.extendTransform({ x: 280 + i * 7, y: 280 + (i % 9) * 5 })
+  for (let i = 40; i >= 0; i--) ed.extendTransform({ x: 280 + i * 7, y: 280 + (i % 9) * 5 })
+  const duringDrag = ed.doc.active.surface.extract({ x: 0, y: 0, w: W, h: H })
+  let movedDuringDrag = 0
+  {
+    const a = afterLift.ctx.getImageData(0, 0, W, H).data
+    const b = duringDrag.ctx.getImageData(0, 0, W, H).data
+    for (let i = 3; i < a.length; i += 4) if (Math.abs(a[i] - b[i]) > 8) movedDuringDrag++
+  }
+  ed.extendTransform({ x: 280, y: 280 })
+  ed.endTransform()
+
+  R.noResidue = {
+    // The layer is untouched between lift and commit, however many events arrive.
+    untouchedWhileDragging: movedDuringDrag === 0,
+    // Ending where it began restores the original exactly, with nothing accumulated.
+    returnsToOriginal: sameAsPristine() < 40,
+    stillSelected: ed.selection.active
+  }
+
+  // Dragging somewhere and back again, as a fresh gesture each time, must also not accumulate.
+  reset()
+  ed.setBrush({ symmetry: 'none', color: '#0000ff', size: 20 })
+  stroke(line(300, 500, 700, 500, 60))
+  const before2 = ed.doc.active.surface.extract({ x: 0, y: 0, w: W, h: H })
+  ed.tool = 'transform'
+  ed.selectRect(280, 480, 440, 60)
+  /*
+   * Grabbed INSIDE the selection, which is a move. An earlier version of this grabbed a corner —
+   * that is a scale, and repeatedly scaling down and back up resamples the pixels each time and
+   * softens them, in this editor and in every other one. Losing detail to repeated resampling is
+   * not the bug being tested for; accumulating residue from a translation is.
+   */
+  for (let k = 0; k < 4; k++) {
+    ed.beginTransform({ x: 500, y: 510 })
+    ed.extendTransform({ x: 600, y: 590 })
+    ed.endTransform()
+    ed.beginTransform({ x: 600, y: 590 })
+    ed.extendTransform({ x: 500, y: 510 })
+    ed.endTransform()
+  }
+  let driftAfterRoundTrips = 0
+  {
+    const a = before2.ctx.getImageData(0, 0, W, H).data
+    const b = ed.doc.active.surface.extract({ x: 0, y: 0, w: W, h: H }).ctx.getImageData(0, 0, W, H).data
+    for (let i = 3; i < a.length; i += 4) if (Math.abs(a[i] - b[i]) > 8) driftAfterRoundTrips++
+  }
+  // A pure translation is lossless, so eight of them should return the exact pixels.
+  R.roundTrips = { drift: driftAfterRoundTrips, clean: driftAfterRoundTrips < 40 }
+
+  // ---- 6c. the outline is the shape, not its bounding box -------------------
+  reset()
+  ed.selectEllipse(200, 200, 400, 200)
+  const outline = ed.selection.outline
+  R.outline = {
+    hasMany: outline.length > 20,
+    // An ellipse's outline must not be its four corners: no point should sit at the corner.
+    notABox: !outline.some((q) => Math.abs(q.x - 200) < 1 && Math.abs(q.y - 200) < 1)
+  }
+  ed.deselect()
+  ed.tool = 'brush'
+
   // ---- 7. deselect / select-all -------------------------------------------
   reset()
   ed.selectRect(10, 10, 40, 40)
@@ -197,7 +287,10 @@ const SCRIPT = `(() => {
     R.symXYSelect.origin && R.symXYSelect.x && R.symXYSelect.y && R.symXYSelect.xy &&
     R.symXTransform.paintedBoth && R.symXTransform.rightSelected &&
     R.symXTransform.leftMoved && R.symXTransform.rightMoved && R.symXTransform.lockstep &&
-    R.deselect && R.selectAll && R.deselectAfterAll
+    R.deselect && R.selectAll && R.deselectAfterAll &&
+    R.noResidue.untouchedWhileDragging && R.noResidue.returnsToOriginal &&
+    R.noResidue.stillSelected && R.roundTrips.clean &&
+    R.outline.hasMany && R.outline.notABox
   )
   return R
 })()`
