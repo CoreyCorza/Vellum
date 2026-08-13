@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useEditorState } from '../useEditor'
 import { FloatingPanel } from './FloatingPanel'
 import { saveText } from '../platform'
@@ -64,6 +64,63 @@ export function ProfilerPanel(): JSX.Element {
    */
   const [stage, setStage] = useState(false)
   const [corrNote, setCorrNote] = useState('')
+
+  /**
+   * A blind test, because "it feels better" cannot be trusted by the person hoping it does.
+   *
+   * The correction is switched on or off at random and not shown. You draw, you guess, and the
+   * tally is kept. Wanting it to work cannot help you guess, which is the entire point — it is
+   * the only instrument here that is immune to the person holding it.
+   */
+  const [trial, setTrial] = useState<boolean | null>(null)
+  const [tally, setTally] = useState({ right: 0, total: 0 })
+  const beforeTrials = useRef<boolean | null>(null)
+
+  const startTrial = (): void => {
+    if (beforeTrials.current === null) beforeTrials.current = editor.distortionEnabled
+    const on = Math.random() < 0.5
+    setTrial(on)
+    editor.distortionEnabled = on
+    editor.ui.emit()
+  }
+
+  const guess = (saidOn: boolean): void => {
+    if (trial === null) return
+    setTally((t) => ({ right: t.right + (saidOn === trial ? 1 : 0), total: t.total + 1 }))
+    setTrial(null)
+    // Left off between trials so the next one starts from the same place either way.
+    editor.distortionEnabled = false
+    editor.ui.emit()
+  }
+
+  const endTrials = (): void => {
+    setTrial(null)
+    setTally({ right: 0, total: 0 })
+    if (beforeTrials.current !== null) {
+      editor.distortionEnabled = beforeTrials.current
+      beforeTrials.current = null
+      editor.ui.emit()
+    }
+  }
+
+  /**
+   * How often a score this good would happen by luck alone.
+   *
+   * Reported instead of a verdict, because the honest answer to "is this real" is a probability
+   * and a small number of trials cannot give more than that. Six out of six is worth more than
+   * sixty out of a hundred, and this says so.
+   */
+  const byChance = (right: number, total: number): number => {
+    if (total === 0) return 1
+    const choose = (n: number, k: number): number => {
+      let c = 1
+      for (let i = 0; i < k; i++) c = (c * (n - i)) / (i + 1)
+      return c
+    }
+    let p = 0
+    for (let k = right; k <= total; k++) p += choose(total, k) * Math.pow(0.5, total)
+    return p
+  }
 
   /**
    * Load a correction measured from ruler sweeps, and switch it on.
@@ -193,6 +250,68 @@ export function ProfilerPanel(): JSX.Element {
             </label>
             {corrNote && <span className="prof-saved">{corrNote}</span>}
           </div>
+
+          {editor.distortion && (
+            <>
+              <div className="prof-head">
+                <span>Blind test</span>
+              </div>
+              <p className="prof-how">
+                {trial === null
+                  ? 'Switches the correction on or off at random without telling you. Draw, then say which it was. Wanting it to work cannot help you guess.'
+                  : 'Drawing now — correction is on or off, and you are not being told which. Draw a few lines, then choose.'}
+              </p>
+              <div className="prof-actions">
+                {trial === null ? (
+                  <button className="btn" onClick={startTrial}>
+                    Draw a blind trial
+                  </button>
+                ) : (
+                  <>
+                    <button className="btn" onClick={() => guess(true)}>
+                      It was on
+                    </button>
+                    <button className="btn" onClick={() => guess(false)}>
+                      It was off
+                    </button>
+                  </>
+                )}
+                {tally.total > 0 && (
+                  <button className="btn" onClick={endTrials}>
+                    Reset
+                  </button>
+                )}
+              </div>
+              {tally.total > 0 && (
+                <div className="prof-report">
+                  <div className="prof-stat">
+                    <span className="prof-stat-k">Correct</span>
+                    <span className="prof-stat-v">
+                      {tally.right} of {tally.total}
+                    </span>
+                  </div>
+                  <div className="prof-stat">
+                    <span className="prof-stat-k">By luck alone</span>
+                    <span className="prof-stat-v">
+                      {(byChance(tally.right, tally.total) * 100).toFixed(0)}% of the time
+                    </span>
+                  </div>
+                  <div className="prof-stat">
+                    <span className="prof-stat-k">Reading</span>
+                    <span className="prof-stat-v">
+                      {tally.total < 6
+                        ? 'too few trials yet'
+                        : byChance(tally.right, tally.total) < 0.05
+                          ? 'you can tell'
+                          : byChance(tally.right, tally.total) < 0.2
+                            ? 'probably, keep going'
+                            : 'no better than guessing'}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
 
           <div className="prof-actions">
             <button className="btn prof-go" onClick={() => setStage(true)}>

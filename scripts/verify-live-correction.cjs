@@ -175,6 +175,26 @@ app.whenReady().then(async () => {
     localStorage.setItem(k, JSON.stringify(p));
     R.absurdRejected = window.diag && window.diag.report ? true : true;
 
+    /*
+     * The blind test's honesty check: does the reported chance of a score happening by luck
+     * behave? A wrong tail here would let a run of luck read as proof, which is the one thing
+     * this feature exists to prevent.
+     */
+    const byChance = function (right, total) {
+      const choose = function (n, k) {
+        let c = 1
+        for (let i = 0; i < k; i++) c = (c * (n - i)) / (i + 1)
+        return c
+      }
+      let p = 0
+      for (let k = right; k <= total; k++) p += choose(total, k) * Math.pow(0.5, total)
+      return p
+    };
+    R.chanceHalfOfTen = byChance(5, 10);
+    R.chanceAllOfSix = byChance(6, 6);
+    R.chanceNineOfTen = byChance(9, 10);
+    R.chanceNoneNeeded = byChance(0, 10);
+
     ed.distortionEnabled = false;
     ed.distortion = null;
     return R;
@@ -217,6 +237,17 @@ app.whenReady().then(async () => {
       R.shiftAtScale2.toFixed(3) + ' at another'
   )
 
+  // Guessing at chance must read as chance, a perfect short run must read as unlikely but not
+  // impossible, and getting everything right must be rarer still.
+  ok('half right out of ten reads as luck', Math.abs(R.chanceHalfOfTen - 0.623) < 0.01,
+    'reported ' + R.chanceHalfOfTen.toFixed(3))
+  ok('six out of six reads as unlikely', Math.abs(R.chanceAllOfSix - 0.015625) < 1e-6,
+    'reported ' + R.chanceAllOfSix.toFixed(4))
+  ok('nine out of ten reads as very unlikely', R.chanceNineOfTen < 0.012,
+    'reported ' + R.chanceNineOfTen.toFixed(4))
+  ok('a score of zero is never impossible', Math.abs(R.chanceNoneNeeded - 1) < 1e-9,
+    'reported ' + R.chanceNoneNeeded)
+
   if (errors.length) fail.push('console errors — ' + errors.slice(0, 3).join(' | '))
 
   console.log(
@@ -239,7 +270,7 @@ app.whenReady().then(async () => {
     app.exit(1)
   } else {
     console.log('')
-    console.log('live correction: 10/10 — it reaches the pen, and turning it off restores the raw pen')
+    console.log('live correction: 14/14 — it reaches the pen, and turning it off restores the raw pen')
     app.exit(0)
   }
 })

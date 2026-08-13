@@ -110,7 +110,7 @@ app.whenReady().then(async () => {
               return { x: (p.x - cx) * s, y: (p.y - cy) * s }
             })
             if (pts.length < 400) continue
-            strokes.push({ label: c.label, pts: pts })
+            strokes.push({ label: c.label, pts: pts, zoom: s })
           }
         }
         if (strokes.length < 2) return { failed: 'need at least two ruler strokes' }
@@ -159,6 +159,7 @@ app.whenReady().then(async () => {
           })
           return {
             label: st.label,
+            zoom: st.zoom,
             line: line,
             angleDeg: (Math.atan2(line.dy, line.dx) * 180) / Math.PI,
             passes: passes
@@ -207,7 +208,8 @@ app.whenReady().then(async () => {
               accY[i] += (p.pts[j].y + (p.pts[j + 1].y - p.pts[j].y) * f) / passes.length
             }
           }
-          return { err: acc, x: accX, y: accY, step: step, dx: stroke.line.dx, dy: stroke.line.dy }
+          return { err: acc, x: accX, y: accY, step: step, dx: stroke.line.dx, dy: stroke.line.dy,
+                   zoom: stroke.zoom }
         }
 
         const evens = function (n) {
@@ -368,7 +370,7 @@ app.whenReady().then(async () => {
           tableX: describe(corr.x),
           tableY: describe(corr.y),
           heldOut: testProfiles.map(function (p, i) {
-            return Object.assign({ angle: (Math.atan2(p.dy, p.dx) * 180) / Math.PI },
+            return Object.assign({ angle: (Math.atan2(p.dy, p.dx) * 180) / Math.PI, zoom: p.zoom },
               scoreProfile(p, corr))
           }),
           onFit: fitProfiles.map(function (p) {
@@ -414,8 +416,9 @@ app.whenReady().then(async () => {
     console.log('  ' + label)
     for (const r of rows) {
       console.log(
-        '    ' + (num(r.angle, 0) + ' deg').padEnd(9) + num(r.before) + ' -> ' + num(r.after) +
-          ' px   ' + pct(r.removed).padStart(8)
+        '    ' + (num(r.angle, 0) + ' deg').padEnd(9) +
+          (r.zoom ? ('zoom ' + num(r.zoom, 2)).padEnd(11) : '') +
+          num(r.before) + ' -> ' + num(r.after) + ' px   ' + pct(r.removed).padStart(8)
       )
     }
     const m = rows.reduce((s, r) => s + r.removed, 0) / Math.max(1, rows.length)
