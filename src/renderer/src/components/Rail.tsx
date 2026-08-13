@@ -29,6 +29,28 @@ const icons: Record<string, JSX.Element> = {
       <path d="M15 5.5 18.5 9 9 18.5l-4 1 1-4L15 5.5Z" />
     </>
   ),
+  'select-rect': (
+    <>
+      <rect x="5" y="5" width="14" height="14" rx="1" />
+    </>
+  ),
+  'select-ellipse': (
+    <>
+      <ellipse cx="12" cy="12" rx="8" ry="6" />
+    </>
+  ),
+  'select-lasso': (
+    <>
+      <path d="M7 16c-2-2-2-6 1-8 3-2 6-1 8 1 2 2 3 6 0 8-2 1.5-5 2-7 0" />
+      <path d="M8 17.5c.4 1.4 1.6 2.5 3 2.5" />
+    </>
+  ),
+  transform: (
+    <>
+      <path d="M12 4v16M4 12h16" />
+      <path d="m8 8 8 8M16 8l-8 8" />
+    </>
+  ),
   undo: (
     <>
       <path d="M4 9h10a5 5 0 0 1 0 10H9" />
@@ -155,6 +177,11 @@ export function Rail({ onExport }: { onExport: () => void }): JSX.Element {
       {tool('brush', 'Brush (B)')}
       {tool('eraser', 'Eraser (E)')}
       {tool('picker', 'Eyedropper (I, or hold Alt)')}
+      <div className="rail-sep" />
+      {tool('select-rect', 'Rectangular selection (R)')}
+      {tool('select-ellipse', 'Elliptical selection (O)')}
+      {tool('select-lasso', 'Lasso selection (L)')}
+      {tool('transform', 'Transform selection (V)')}
       <div className="rail-sep" />
       <button
         className="tool"
