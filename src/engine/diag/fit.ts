@@ -2,6 +2,7 @@ import type { Capture, RawSample } from './capture'
 import type { AxisTable, Correction } from './correction'
 import { offsetAt } from './correction'
 import { fitLine, type Line } from './analysis'
+import { shapeResiduals, directionSpread, type ShapeResidual } from './shapes'
 
 /**
  * Working out a tablet's distortion from its own recordings, inside the app.
@@ -29,7 +30,9 @@ import { fitLine, type Line } from './analysis'
  */
 
 const BIN = 4
-const ITERATIONS = 6
+const ITERATIONS = 12
+/** Step size for the alternating fit. Below one so the two axes cannot push each other apart. */
+const DAMPING = 0.7
 /** A bin needs this much evidence before it is trusted. */
 const MIN_WEIGHT = 8
 
@@ -238,35 +241,47 @@ function fitTables(profiles: readonly Profile[]): Correction {
       const resid = p.err.map((e, i) => e - (-ex[ixOf(p.x[i])] * p.dy + ey[iyOf(p.y[i])] * p.dx))
       bows[s] = smooth(resid, Math.max(2, Math.round(140 / p.step / 2)))
     }
+    // Weighted least squares, for the same reason as the shape fit: dividing by a small projection
+    // amplifies the samples that know least and couples that noise between the two axes.
     const sx = new Array<number>(nx).fill(0)
+    const dx2 = new Array<number>(nx).fill(0)
     wx = new Array<number>(nx).fill(0)
     for (let s = 0; s < profiles.length; s++) {
       const p = profiles[s]
-      // A sweep nearly parallel to an axis says almost nothing about that axis, and dividing by a
-      // vanishing projection amplifies whatever noise it does carry.
-      if (Math.abs(p.dy) < 0.2) continue
       for (let i = 0; i < p.err.length; i++) {
-        const r = p.err[i] - bows[s][i] - ey[iyOf(p.y[i])] * p.dx
+        const jy = iyOf(p.y[i])
+        const r = p.err[i] - bows[s][i] - (wy[jy] >= MIN_WEIGHT ? ey[jy] : 0) * p.dx
         const b = ixOf(p.x[i])
-        sx[b] += -r / p.dy
+        sx[b] += -r * p.dy
+        dx2[b] += p.dy * p.dy
         wx[b]++
       }
     }
-    ex = sx.map((v, i) => (wx[i] > 0 ? v / wx[i] : 0))
+    const exNew = detrend(
+      sx.map((v, i) => (dx2[i] > 1e-6 && wx[i] >= MIN_WEIGHT ? v / dx2[i] : 0)),
+      wx
+    )
+    ex = ex.map((v, i) => v + DAMPING * (exNew[i] - v))
 
     const sy = new Array<number>(ny).fill(0)
+    const dy2 = new Array<number>(ny).fill(0)
     wy = new Array<number>(ny).fill(0)
     for (let s = 0; s < profiles.length; s++) {
       const p = profiles[s]
-      if (Math.abs(p.dx) < 0.2) continue
       for (let i = 0; i < p.err.length; i++) {
-        const r = p.err[i] - bows[s][i] + ex[ixOf(p.x[i])] * p.dy
+        const jx = ixOf(p.x[i])
+        const r = p.err[i] - bows[s][i] + (wx[jx] >= MIN_WEIGHT ? ex[jx] : 0) * p.dy
         const b = iyOf(p.y[i])
-        sy[b] += r / p.dx
+        sy[b] += r * p.dx
+        dy2[b] += p.dx * p.dx
         wy[b]++
       }
     }
-    ey = sy.map((v, i) => (wy[i] > 0 ? v / wy[i] : 0))
+    const eyNew = detrend(
+      sy.map((v, i) => (dy2[i] > 1e-6 && wy[i] >= MIN_WEIGHT ? v / dy2[i] : 0)),
+      wy
+    )
+    ey = ey.map((v, i) => v + DAMPING * (eyNew[i] - v))
   }
 
   const table = (step: number, origin: number, offsets: number[], weight: number[]): AxisTable => ({
@@ -385,4 +400,219 @@ export function calibrate(captures: readonly Capture[]): CalibrationResult {
             ? 'too little improvement to be worth applying'
             : 'no better than using the tables on the wrong axis, which means nothing real was measured'
   }
+}
+
+/**
+ * Calibrate from ordinary drawn strokes — straight lines, C curves, S curves — with no ruler.
+ *
+ * Same joint fit as the ruler version, fed from a different measurement. Each stroke contributes a
+ * smooth curve taken as what the arm intended and a set of sideways residuals from it, and every
+ * sample carries its own direction of travel, which along a curve is constantly changing. That
+ * changing direction is what separates the two axes, and it is why a handful of freehand curves can
+ * replace a ruler placed at several careful angles.
+ *
+ * The hand is dealt with by weight of numbers rather than by repetition: it is not tied to position,
+ * so with enough strokes crossing each part of the surface it averages away, exactly as repeated
+ * passes over one ruler did.
+ */
+export function calibrateFromShapes(captures: readonly Capture[]): CalibrationResult {
+  const groups: ShapeResidual[][] = []
+  for (const c of captures) {
+    if (c.label === 'still' || c.label === 'hover' || c.label === 'braced' || c.label === 'press') {
+      continue
+    }
+    const res = shapeResiduals(toGlass(c))
+    if (res.length > 200) groups.push(res)
+  }
+
+  // How much each stroke turns. A stroke that never changes direction only samples one mixture of
+  // the two axes, so a set of straight lines all the same way round is worth far less than a curve.
+  const spreads = groups.map(directionSpread)
+  const turning = spreads.filter((v) => v > 25).length
+  const allAngles: number[] = []
+  for (const g of groups) {
+    for (let i = 0; i < g.length; i += 40) {
+      allAngles.push(Math.round(((((Math.atan2(g[i].dy, g[i].dx) * 180) / Math.PI) % 180) + 180) % 180))
+    }
+  }
+  const coverage = allAngles.length ? Math.max(...allAngles) - Math.min(...allAngles) : 0
+
+  if (groups.length < 6) {
+    return {
+      correction: null, sweeps: groups.length, angles: allAngles, heldOut: 0, onFit: 0, control: 0,
+      verdict: 'not enough data',
+      reason: `only ${groups.length} usable strokes — draw at least 6, and 20 is better`
+    }
+  }
+  if (coverage < 60 && turning === 0) {
+    return {
+      correction: null, sweeps: groups.length, angles: allAngles, heldOut: 0, onFit: 0, control: 0,
+      verdict: 'not enough data',
+      reason: 'the strokes all travel in similar directions — curves that turn, or lines at different angles, are what separate the two axes'
+    }
+  }
+
+  const evens = groups.filter((_, i) => i % 2 === 0)
+  const odds = groups.filter((_, i) => i % 2 === 1)
+  const half = fitFromSamples(evens)
+  const all = fitFromSamples(groups)
+
+  const mean = (v: number[]): number => (v.length ? v.reduce((s, x) => s + x, 0) / v.length : 0)
+  const heldOut = mean(odds.map((g) => scoreSamples(g, half).removed))
+  const onFit = mean(evens.map((g) => scoreSamples(g, half).removed))
+  const control = mean(odds.map((g) => scoreSamples(g, { x: half.y, y: half.x }).removed))
+
+  const beatsControl = heldOut > control + 0.15
+  const verdict: CalibrationResult['verdict'] =
+    heldOut > 0.25 && beatsControl ? 'good' : heldOut > 0.1 && beatsControl ? 'partial' : 'not enough data'
+
+  return {
+    correction: verdict === 'not enough data' ? null : all,
+    sweeps: groups.length,
+    angles: allAngles,
+    heldOut,
+    onFit,
+    control,
+    verdict,
+    reason:
+      verdict === 'good'
+        ? 'clearly better on strokes it was not built from, and swapping the axes does not help'
+        : verdict === 'partial'
+          ? 'a real but partial improvement; more strokes, and more curves among them, would raise it'
+          : beatsControl
+            ? 'too little improvement to be worth applying'
+            : 'no better than using the tables on the wrong axis, so nothing real was measured'
+  }
+}
+
+/** The joint fit, taking per-sample residuals with their own local direction. */
+function fitFromSamples(groups: readonly ShapeResidual[][]): Correction {
+  let xLo = Infinity, xHi = -Infinity, yLo = Infinity, yHi = -Infinity
+  for (const g of groups) {
+    for (const r of g) {
+      if (r.x < xLo) xLo = r.x
+      if (r.x > xHi) xHi = r.x
+      if (r.y < yLo) yLo = r.y
+      if (r.y > yHi) yHi = r.y
+    }
+  }
+  const nx = Math.max(2, Math.ceil((xHi - xLo) / BIN) + 1)
+  const ny = Math.max(2, Math.ceil((yHi - yLo) / BIN) + 1)
+  const ixOf = (v: number): number => Math.min(nx - 1, Math.max(0, Math.round((v - xLo) / BIN)))
+  const iyOf = (v: number): number => Math.min(ny - 1, Math.max(0, Math.round((v - yLo) / BIN)))
+
+  let ex = new Array<number>(nx).fill(0)
+  let ey = new Array<number>(ny).fill(0)
+  let wx = new Array<number>(nx).fill(0)
+  let wy = new Array<number>(ny).fill(0)
+
+  for (let it = 0; it < ITERATIONS; it++) {
+    /*
+     * Weighted least squares, not an average of divided residuals.
+     *
+     * The sideways error a sample reports is the x error times its own dy. Recovering the x error by
+     * DIVIDING by dy amplifies precisely the samples that carry least information about x — a sample
+     * travelling almost along x has a tiny dy and gets multiplied by four or more — and feeds that
+     * amplified noise into the other axis, which feeds it back. Six rounds of that diverges, and it
+     * diverges faster with more data, which is how the bug announced itself: twenty strokes scored
+     * -7%, two hundred scored -236%. More evidence can never make a correct estimator worse.
+     *
+     * The least squares answer multiplies by dy and divides by the sum of dy squared, so a sample
+     * that knows little about this axis contributes little instead of shouting.
+     */
+    /*
+     * Two guards, both needed, both learned by watching this diverge.
+     *
+     * A bin holding two or three samples produces a number that is mostly noise. Used as an input to
+     * the OTHER axis it poisons that axis, which poisons this one back — and the thinner the coverage
+     * the more such bins there are, which is why adding strokes made things worse rather than better.
+     * So a bin only speaks once it has real evidence behind it.
+     *
+     * And the two tables together have a genuine blind spot: a uniform stretch or skew of the
+     * coordinates produces almost no sideways error on any stroke, so the data cannot pin it down.
+     * The iteration is free to wander along that direction indefinitely, and it does. Removing any
+     * overall shift and tilt from both tables on EVERY round keeps the estimate in the part of the
+     * answer the measurements actually constrain. Doing it only at the end, as this did first, lets
+     * the wandering happen and then subtracts a straight line from a mess.
+     */
+    const sx = new Array<number>(nx).fill(0)
+    const dx2 = new Array<number>(nx).fill(0)
+    wx = new Array<number>(nx).fill(0)
+    for (const g of groups) {
+      for (const r of g) {
+        const b = ixOf(r.x)
+        const jy = iyOf(r.y)
+        const resid = r.err - (wy[jy] >= MIN_WEIGHT ? ey[jy] : 0) * r.dx
+        sx[b] += -resid * r.dy
+        dx2[b] += r.dy * r.dy
+        wx[b]++
+      }
+    }
+    const exNew = detrend(
+      sx.map((v, i) => (dx2[i] > 1e-6 && wx[i] >= MIN_WEIGHT ? v / dx2[i] : 0)),
+      wx
+    )
+    // A partial step, so a bin that swings wildly on one round cannot drag the other axis with it.
+    ex = ex.map((v, i) => v + DAMPING * (exNew[i] - v))
+
+    const sy = new Array<number>(ny).fill(0)
+    const dy2 = new Array<number>(ny).fill(0)
+    const wyNext = new Array<number>(ny).fill(0)
+    for (const g of groups) {
+      for (const r of g) {
+        const b = iyOf(r.y)
+        const jx = ixOf(r.x)
+        const resid = r.err + (wx[jx] >= MIN_WEIGHT ? ex[jx] : 0) * r.dy
+        sy[b] += resid * r.dx
+        dy2[b] += r.dx * r.dx
+        wyNext[b]++
+      }
+    }
+    wy = wyNext
+    const eyNew = detrend(
+      sy.map((v, i) => (dy2[i] > 1e-6 && wy[i] >= MIN_WEIGHT ? v / dy2[i] : 0)),
+      wy
+    )
+    ey = ey.map((v, i) => v + DAMPING * (eyNew[i] - v))
+  }
+
+  return {
+    x: { step: BIN, origin: xLo, offsets: detrend(ex, wx), weight: wx },
+    y: { step: BIN, origin: yLo, offsets: detrend(ey, wy), weight: wy }
+  }
+}
+
+/** Wobble across one stroke's residuals, before and after correcting the positions. */
+function scoreSamples(
+  g: readonly ShapeResidual[],
+  c: Correction
+): { before: number; after: number; removed: number } {
+  const rms = (v: number[]): number => {
+    let s = 0
+    for (const q of v) s += q * q
+    return Math.sqrt(s / Math.max(1, v.length))
+  }
+  const before = g.map((r) => r.err)
+  const after = g.map((r) => {
+    const ox = c.x ? offsetAt(c.x, r.x) : 0
+    const oy = c.y ? offsetAt(c.y, r.y) : 0
+    return r.err - (-ox * r.dy + oy * r.dx)
+  })
+  /*
+   * Both are re-levelled before comparing.
+   *
+   * A correction can shift or tilt a whole stroke without making it any straighter, and leaving that
+   * in would credit the correction for something that is not an improvement in the line.
+   */
+  const level = (v: number[]): number[] => {
+    let n = 0, si = 0, sv = 0, sii = 0, siv = 0
+    for (let i = 0; i < v.length; i++) { n++; si += i; sv += v[i]; sii += i * i; siv += i * v[i] }
+    const den = n * sii - si * si
+    const slope = den !== 0 ? (n * siv - si * sv) / den : 0
+    const inter = (sv - slope * si) / n
+    return v.map((q, i) => q - inter - slope * i)
+  }
+  const b = rms(level(before))
+  const a = rms(level(after))
+  return { before: b, after: a, removed: b > 0 ? 1 - a / b : 0 }
 }
