@@ -4,6 +4,7 @@ import { FloatingPanel } from './FloatingPanel'
 import { saveText } from '../platform'
 import { savePrefs } from '../prefs'
 import type { Correction } from '@engine/diag/correction'
+import { calibrate, type CalibrationResult } from '@engine/diag/fit'
 import { report, type Report } from '@engine/diag/analysis'
 import { ProfilerStage } from './ProfilerStage'
 
@@ -64,6 +65,27 @@ export function ProfilerPanel(): JSX.Element {
    */
   const [stage, setStage] = useState(false)
   const [corrNote, setCorrNote] = useState('')
+  const [cal, setCal] = useState<CalibrationResult | null>(null)
+
+  /**
+   * Work out the correction here, from the sweeps already recorded.
+   *
+   * The whole point. Until this existed a correction could only be produced by someone willing to
+   * run build tools over a capture file, which meant it worked for exactly one tablet belonging to
+   * exactly one person — no use to anyone else, and no use to the same person with a new tablet or
+   * a tablet that has drifted.
+   */
+  const calibrateNow = (): void => {
+    const result = calibrate(editor.recorder.all())
+    setCal(result)
+    if (result.correction) {
+      editor.distortion = result.correction
+      editor.distortionEnabled = true
+      savePrefs({ distortion: result.correction, distortionEnabled: true })
+      setCorrNote('')
+    }
+    editor.ui.emit()
+  }
 
   /**
    * A blind test, because "it feels better" cannot be trusted by the person hoping it does.
@@ -264,6 +286,61 @@ export function ProfilerPanel(): JSX.Element {
               ? 'Subtracted from every pen sample. No smoothing and no lag: it only removes what was measured as fixed to the glass.'
               : 'Load a correction fitted from ruler sweeps to switch this on.'}
           </p>
+          <div className="prof-actions">
+            <button
+              className="btn prof-go"
+              onClick={calibrateNow}
+              disabled={editor.recorder.count < 4}
+            >
+              Calibrate from my sweeps
+            </button>
+            {editor.recorder.count < 4 && (
+              <span className="prof-saved">record some ruler sweeps first</span>
+            )}
+          </div>
+
+          {cal && (
+            <div className="prof-report">
+              <div className="prof-stat">
+                <span className="prof-stat-k">Sweeps used</span>
+                <span className="prof-stat-v">{cal.sweeps}</span>
+              </div>
+              {cal.sweeps > 0 && (
+                <div className="prof-stat">
+                  <span className="prof-stat-k">Angles covered</span>
+                  <span className="prof-stat-v">
+                    {Math.min(...cal.angles)}° to {Math.max(...cal.angles)}°
+                  </span>
+                </div>
+              )}
+              {cal.verdict !== 'not enough data' && (
+                <>
+                  <div className="prof-stat">
+                    <span className="prof-stat-k">Wobble removed</span>
+                    <span className="prof-stat-v">{(cal.heldOut * 100).toFixed(0)}%</span>
+                  </div>
+                  <div className="prof-stat">
+                    <span className="prof-stat-k">Checked against</span>
+                    <span className="prof-stat-v">
+                      {(cal.control * 100).toFixed(0)}% for a deliberately wrong correction
+                    </span>
+                  </div>
+                </>
+              )}
+              <div className="prof-stat">
+                <span className="prof-stat-k">Result</span>
+                <span className="prof-stat-v">
+                  {cal.verdict === 'good'
+                    ? 'switched on'
+                    : cal.verdict === 'partial'
+                      ? 'switched on, could be better'
+                      : 'not applied'}
+                </span>
+              </div>
+              <p className="prof-how">{cal.reason}</p>
+            </div>
+          )}
+
           <div className="prof-actions">
             <label className="btn">
               Load correction…

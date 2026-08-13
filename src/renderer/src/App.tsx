@@ -16,6 +16,7 @@ import { clamp, type ToolId } from '@engine/types'
 import type { Modifiers } from '@engine/input'
 import * as diagAnalysis from '@engine/diag/analysis'
 import * as diagCorrection from '@engine/diag/correction'
+import * as diagFit from '@engine/diag/fit'
 
 const DOC_WIDTH = 2048
 const DOC_HEIGHT = 1400
@@ -285,7 +286,7 @@ export function App(): JSX.Element {
       ;(window as unknown as { editor: Editor }).editor = editor
       // The analysis functions too, so a recorded stroke can be measured from the
       // console and from the verification scripts without going through the UI.
-      ;(window as unknown as { diag: unknown }).diag = { ...diagAnalysis, ...diagCorrection }
+      ;(window as unknown as { diag: unknown }).diag = { ...diagAnalysis, ...diagCorrection, ...diagFit }
       editor.recorder.devicePixelRatio = window.devicePixelRatio || 1
     }
   }, [editor])
