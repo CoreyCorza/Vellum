@@ -45,17 +45,37 @@ export class PixelPatch implements Command {
 
 /** Structural edits — add/remove/reorder/rename/opacity. Cheap, so no budgeting. */
 export class ActionCommand implements Command {
-  readonly bytes = 0
+  readonly bytes: number
   constructor(
     readonly label: string,
     private _undo: () => void,
-    private _redo: () => void
-  ) {}
+    private _redo: () => void,
+    bytes = 0
+  ) {
+    this.bytes = bytes
+  }
   undo(): void {
     this._undo()
   }
   redo(): void {
     this._redo()
+  }
+}
+
+/** Several commands that undo as one step — a pixel edit plus its selection. */
+export class CompoundCommand implements Command {
+  readonly bytes: number
+  constructor(
+    readonly label: string,
+    private parts: Command[]
+  ) {
+    this.bytes = parts.reduce((n, p) => n + p.bytes, 0)
+  }
+  undo(): void {
+    for (let i = this.parts.length - 1; i >= 0; i--) this.parts[i].undo()
+  }
+  redo(): void {
+    for (const p of this.parts) p.redo()
   }
 }
 

@@ -52,3 +52,26 @@ export class Bounds {
 
 export const rectArea = (r: Rect): number => r.w * r.h
 export const rectIsEmpty = (r: Rect): boolean => r.w <= 0 || r.h <= 0
+
+export function rectUnion(a: Rect, b: Rect): Rect {
+  if (rectIsEmpty(a)) return { ...b }
+  if (rectIsEmpty(b)) return { ...a }
+  const x = Math.min(a.x, b.x)
+  const y = Math.min(a.y, b.y)
+  const x2 = Math.max(a.x + a.w, b.x + b.w)
+  const y2 = Math.max(a.y + a.h, b.y + b.h)
+  return { x, y, w: x2 - x, h: y2 - y }
+}
+
+export function rectsOverlap(a: Rect, b: Rect): boolean {
+  return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y
+}
+
+/** Circle vs rect, used to skip dabs that cannot touch the selection AABB. */
+export function circleHitsRect(x: number, y: number, r: number, box: Rect): boolean {
+  const nx = clamp(x, box.x, box.x + box.w)
+  const ny = clamp(y, box.y, box.y + box.h)
+  const dx = x - nx
+  const dy = y - ny
+  return dx * dx + dy * dy <= r * r
+}
