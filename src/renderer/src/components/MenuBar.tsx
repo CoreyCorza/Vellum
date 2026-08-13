@@ -105,6 +105,14 @@ export function MenuBar({
           onSelect: () => editor.redo()
         },
         { separator: true },
+        { label: 'Select all', shortcut: 'Ctrl+A', onSelect: () => editor.selectAll() },
+        {
+          label: 'Deselect',
+          shortcut: 'Ctrl+D',
+          disabled: !editor.selectionActive,
+          onSelect: () => editor.deselect()
+        },
+        { separator: true },
         { label: 'Clear layer', onSelect: () => editor.clearLayer() },
         { separator: true },
         todo('Cut'),

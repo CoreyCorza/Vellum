@@ -146,6 +146,12 @@ export function App(): JSX.Element {
         } else if (k === 's') {
           e.preventDefault()
           void onExport()
+        } else if (k === 'a') {
+          e.preventDefault()
+          editor.selectAll()
+        } else if (k === 'd') {
+          e.preventDefault()
+          editor.deselect()
         }
         return
       }
@@ -173,6 +179,11 @@ export function App(): JSX.Element {
           }
           break
         case 'i': editor.setTool('picker'); break
+        case 'r': editor.setTool('select-rect'); break
+        case 'o': editor.setTool('select-ellipse'); break
+        case 'l': editor.setTool('select-lasso'); break
+        case 'v': editor.setTool('transform'); break
+        case 'escape': editor.cancelSelectionGesture(); break
         case '[': editor.setBrush({ size: Math.max(1, editor.brush.size * 0.85) }); break
         case ']': editor.setBrush({ size: Math.min(400, editor.brush.size * 1.18 + 1) }); break
         case 'f':
