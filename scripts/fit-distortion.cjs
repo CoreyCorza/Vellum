@@ -50,6 +50,18 @@ app.whenReady().then(async () => {
   await win.loadFile(path.join(root, 'out/renderer/index.html'), { search: 'debug' })
   await new Promise((r) => setTimeout(r, 2000))
 
+  // How much freedom each ruler's own shape gets, and how wide a band to judge over.
+  const bowArg = process.argv.indexOf('--bow')
+  const bandArg = process.argv.indexOf('--band')
+  const bowOrder = bowArg >= 0 ? process.argv[bowArg + 1] : '2'
+  const bandLow = bandArg >= 0 ? process.argv[bandArg + 1] : '80'
+  await win.webContents.executeJavaScript(
+    'window.__bowOrder = ' + (bowOrder === 'free' ? 'null' : bowOrder) +
+      '; window.__bandLow = ' + (bandLow === 'all' ? 'null' : bandLow) + '; 1'
+  )
+  console.log('  ruler shape allowed: ' + (bowOrder === 'free' ? 'any smooth curve' : 'order ' + bowOrder) +
+    ',  judged over: ' + (bandLow === 'all' ? 'every scale' : 'under ' + bandLow + ' px'))
+
   const payload = files.map((f) => fs.readFileSync(f, 'utf8'))
 
   const out = await win.webContents.executeJavaScript(
@@ -231,6 +243,74 @@ app.whenReady().then(async () => {
          * produce an impressive-looking table full of the ruler.
          */
         const BIN = 4
+
+        /*
+         * What shape a ruler's own error is allowed to be.
+         *
+         * A free smoothed curve per stroke, which is what this did first, can absorb ANY slow
+         * content — including slow distortion that the tablet shares across every stroke. That
+         * throws away exactly the part that would feel like being led off the line rather than
+         * jittered, and it was thrown away on purpose to avoid mistaking a bowed ruler for a bent
+         * digitiser.
+         *
+         * A low-order polynomial is the honest compromise. A straightedge bows; it does not
+         * undulate. Restricting it to a bow leaves shared slow content nowhere to go except the
+         * axis tables, where it belongs, while still keeping each ruler's own shape out of them.
+         */
+        /*
+         * Free by default, after measuring both. Restricting the ruler to a bow in the hope of
+         * recovering slow distortion did not help: 58% held out against 60% with a free curve
+         * inside the ripple band, and judged across every scale the correction only reaches 35 to
+         * 39% however the ruler is constrained. So the slow component is not being separated, and
+         * attributing it to the tablet on this evidence would inject a slow warp into every stroke
+         * — worse than the problem. It stays out until it can be told apart from the rulers.
+         */
+        const BOW_ORDER = window.__bowOrder === undefined ? null : window.__bowOrder
+
+        /** Least squares polynomial of a given order, evaluated back over the same samples. */
+        const polyFit = function (v, order) {
+          const n = v.length
+          const m = order + 1
+          // Normal equations on a centred, scaled index, so the powers stay well conditioned.
+          const A = []
+          for (let r = 0; r < m; r++) A.push(new Array(m + 1).fill(0))
+          const tOf = function (i) { return (2 * i) / (n - 1) - 1 }
+          for (let i = 0; i < n; i++) {
+            const t = tOf(i)
+            const pow = [1]
+            for (let k = 1; k < 2 * m; k++) pow.push(pow[k - 1] * t)
+            for (let r = 0; r < m; r++) {
+              for (let c = 0; c < m; c++) A[r][c] += pow[r + c]
+              A[r][m] += pow[r] * v[i]
+            }
+          }
+          // Gaussian elimination; m is 3 or 4, so this is nothing.
+          for (let r = 0; r < m; r++) {
+            let piv = r
+            for (let k = r + 1; k < m; k++) if (Math.abs(A[k][r]) > Math.abs(A[piv][r])) piv = k
+            const tmp = A[r]; A[r] = A[piv]; A[piv] = tmp
+            if (Math.abs(A[r][r]) < 1e-12) continue
+            for (let k = r + 1; k < m; k++) {
+              const f = A[k][r] / A[r][r]
+              for (let c = r; c <= m; c++) A[k][c] -= f * A[r][c]
+            }
+          }
+          const coef = new Array(m).fill(0)
+          for (let r = m - 1; r >= 0; r--) {
+            let acc = A[r][m]
+            for (let c = r + 1; c < m; c++) acc -= A[r][c] * coef[c]
+            coef[r] = Math.abs(A[r][r]) < 1e-12 ? 0 : acc / A[r][r]
+          }
+          const out = new Array(n)
+          for (let i = 0; i < n; i++) {
+            const t = tOf(i)
+            let acc = 0
+            let pw = 1
+            for (let r = 0; r < m; r++) { acc += coef[r] * pw; pw *= t }
+            out[i] = acc
+          }
+          return out
+        }
         const fit = function (profiles, iterations) {
           let xLo = Infinity, xHi = -Infinity, yLo = Infinity, yHi = -Infinity
           for (const p of profiles) {
@@ -256,7 +336,9 @@ app.whenReady().then(async () => {
               const resid = p.err.map(function (e, i) {
                 return e - (-ex[ixOf(p.x[i])] * p.dy + ey[iyOf(p.y[i])] * p.dx)
               })
-              bows[s] = avg(resid, Math.max(2, Math.round(140 / p.step / 2)))
+              bows[s] = BOW_ORDER === null
+                ? avg(resid, Math.max(2, Math.round(140 / p.step / 2)))
+                : polyFit(resid, BOW_ORDER)
             }
             // ex, from the residual with the bow and the current ey removed.
             const sx = new Array(nx).fill(0)
@@ -329,8 +411,11 @@ app.whenReady().then(async () => {
         )
 
         // Score a profile: ripple in the band, before and after correcting the positions.
+        const BAND_LOW = window.__bandLow === undefined ? 80 : window.__bandLow
         const band = function (values, step) {
-          const wide = avg(values, Math.max(2, Math.round(80 / step / 2)))
+          const wide = BAND_LOW === null
+            ? values.map(function () { return 0 })
+            : avg(values, Math.max(2, Math.round(BAND_LOW / step / 2)))
           return avg(values.map(function (v, i) { return v - wide[i] }), Math.max(1, Math.round(14 / step / 2)))
         }
         const rms = function (a) {
