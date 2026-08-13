@@ -276,6 +276,19 @@ export class Editor {
    * chance to treat a distorted coordinate as the truth.
    */
   penToDoc(sx: number, sy: number): { x: number; y: number } {
+    /*
+     * The profiler always sees the tablet raw.
+     *
+     * Without this the recorder sits downstream of the correction, so once a correction is
+     * loaded every new calibration sweep measures the RESIDUAL rather than the error — and a
+     * capture taken with it on could not be combined with one taken with it off, because the two
+     * would be measuring different things while looking identical. The profiler exists to
+     * measure the hardware, so it gets the hardware.
+     *
+     * The correction's benefit is measured by applying a table to a raw recording offline, which
+     * is how every figure so far was arrived at, so nothing is lost by this.
+     */
+    if (this.profiling) return this.camera.screenToDoc(sx, sy)
     if (!this.distortionActive) return this.camera.screenToDoc(sx, sy)
     const hw = this.camera.vw / 2
     const hh = this.camera.vh / 2

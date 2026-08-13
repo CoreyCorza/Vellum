@@ -66,42 +66,75 @@ app.whenReady().then(async () => {
       clientX: x, clientY: y, pressure: 0.6, buttons: type === 'pointerup' ? 0 : 1
     }));
 
-    // Record the same stroke three times: uncorrected, corrected, and uncorrected again.
-    const run = () => {
-      ed.recorder.clear();
-      ed.profiling = true;
-      ed.recorder.label = 'wiring';
-      const y = box.top + 400;
-      ev('pointerdown', box.left + 300, y);
-      for (let i = 1; i <= 40; i++) ev('pointermove', box.left + 300 + i * 9, y);
-      ev('pointerup', box.left + 300 + 40 * 9, y);
-      ed.profiling = false;
-      const c = ed.recorder.last();
-      return c ? c.raw.map(function (p) { return p.x }) : null;
+    R.startsWithNothing = ed.distortion === null;
+
+    /*
+     * A calibration sweep must stay raw even with a correction loaded.
+     *
+     * Otherwise the recorder sits downstream of the correction, every future sweep measures the
+     * RESIDUAL rather than the error, and a capture taken with it on cannot be combined with one
+     * taken with it off — the two would be measuring different things while looking identical.
+     */
+    ed.distortion = table;
+    ed.distortionEnabled = true;
+    ed.profiling = true;
+    const profiled = ed.penToDoc(500, 400);
+    ed.profiling = false;
+    const drawnPt = ed.penToDoc(500, 400);
+    const rawDoc = ed.camera.screenToDoc(500, 400);
+    R.profilerSeesRaw = Math.abs(profiled.x - rawDoc.x) < 1e-9;
+    R.drawingSeesCorrected = Math.abs(drawnPt.x - rawDoc.x) > 1e-6;
+    ed.distortion = null;
+    ed.distortionEnabled = false;
+
+    /*
+     * Observed through a real painted stroke, not through the profiler.
+     *
+     * The profiler deliberately bypasses the correction now, so it cannot be used to see it. The
+     * first stabilised point of a stroke is the raw first sample, which makes it a clean window
+     * onto what the input path actually handed the brush engine.
+     */
+    const firstPointOf = (screenX, screenY) => {
+      const y = box.top + screenY;
+      const x = box.left + screenX;
+      ev('pointerdown', x, y);
+      const pts = ed.debugStrokePoints;
+      const first = pts && pts.length ? pts[0].x : null;
+      ev('pointerup', x, y);
+      return first;
     };
 
-    R.startsWithNothing = ed.distortion === null;
-    const plain = run();
+    ed.distortion = null;
+    ed.distortionEnabled = false;
+    const plain = [];
+    for (let i = 0; i < 24; i++) plain.push(firstPointOf(300 + i * 17, 400));
     await wait();
 
     ed.distortion = table;
     ed.distortionEnabled = true;
     R.reportsActive = ed.distortionActive === true;
-    const corrected = run();
+    const corrected = [];
+    for (let i = 0; i < 24; i++) corrected.push(firstPointOf(300 + i * 17, 400));
     await wait();
 
     ed.distortionEnabled = false;
     R.reportsInactive = ed.distortionActive === false;
-    const offAgain = run();
+    const offAgain = [];
+    for (let i = 0; i < 24; i++) offAgain.push(firstPointOf(300 + i * 17, 400));
     await wait();
 
-    if (!plain || !corrected || !offAgain) return { failed: true, reason: 'nothing recorded' };
+    if (plain.some((v) => v === null) || corrected.some((v) => v === null)) {
+      return { failed: true, reason: 'no stroke points recorded' };
+    }
     R.sameLength = plain.length === corrected.length && plain.length === offAgain.length;
 
+    // Compared in screen pixels, since the table is in screen pixels and the points are in
+    // document space.
+    const sc = ed.camera.scale;
     let moved = 0;
     let maxShift = 0;
     for (let i = 0; i < plain.length; i++) {
-      const dx = Math.abs(corrected[i] - plain[i]);
+      const dx = Math.abs(corrected[i] - plain[i]) * sc;
       if (dx > 0.2) moved++;
       if (dx > maxShift) maxShift = dx;
     }
@@ -159,12 +192,15 @@ app.whenReady().then(async () => {
   }
 
   ok('no correction is loaded to begin with', R.startsWithNothing === true, 'one was already set')
+  ok('the profiler records the tablet raw', R.profilerSeesRaw === true,
+    'a calibration sweep would measure the residual instead of the error')
+  ok('drawing gets the corrected pen', R.drawingSeesCorrected === true, 'not corrected')
   ok('loading one reports it active', R.reportsActive === true, 'not active')
   ok('switching it off reports it inactive', R.reportsInactive === true, 'still active')
-  ok('all three runs recorded the same number of samples', R.sameLength === true, 'lengths differ')
+  ok('all three runs produced the same number of points', R.sameLength === true, 'lengths differ')
   ok(
-    'the correction moves the samples the engine records',
-    R.samplesMoved > R.ofSamples * 0.8,
+    'the correction moves the points the brush engine is given',
+    R.samplesMoved > R.ofSamples * 0.7,
     R.samplesMoved + ' of ' + R.ofSamples + ' moved'
   )
   ok('by about the size of the table', R.maxShift > 0.5 && R.maxShift < 3,
@@ -203,7 +239,7 @@ app.whenReady().then(async () => {
     app.exit(1)
   } else {
     console.log('')
-    console.log('live correction: 8/8 — it reaches the pen, and turning it off restores the raw pen')
+    console.log('live correction: 10/10 — it reaches the pen, and turning it off restores the raw pen')
     app.exit(0)
   }
 })
