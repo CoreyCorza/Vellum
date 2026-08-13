@@ -168,92 +168,115 @@ app.whenReady().then(async () => {
           }
 
           /*
-           * Repeatability: the question that decides whether this can be corrected.
+           * Repeatability, measured the only way that works.
            *
-           * Two horizontal passes at different speeds. If the wiggle is a property of WHERE
-           * the pen is, both passes carry the same wiggle at the same x, and lining them up
-           * by x gives a positive correlation. If it is a hand or plain noise, there is
-           * nothing to line up and the correlation sits near zero.
-           */
-          /*
-           * Compared within one session only, never across two.
+           * An earlier version compared horizontal passes by their along-track wiggle, which
+           * was the wrong channel: the x error does show up there, but so does the hand
+           * genuinely speeding up and slowing down, and that is far larger and does not
+           * repeat. The ripple was being looked for through the noisiest signal available.
            *
-           * The samples are in document space and the report scales them by the zoom, which
-           * does not account for where the canvas was panned to. Two sessions with different
-           * pan would put the same tablet position at different numbers, and the phase of the
-           * ripple would appear to move when nothing had. Captures need the full camera
-           * transform stored before a cross-session comparison means anything.
+           * Sideways error on a ruler pass is the clean channel. The straightedge holds the
+           * hand steady in exactly that direction — ruler passes deviate sideways less than a
+           * braced hand does on its own — so what is left is mostly the tablet.
+           *
+           * All passes are projected onto ONE reference line taken from the first, so a pass
+           * drawn back the other way lands in the same frame rather than in its own mirrored
+           * one. That matters, because direction is the sharpest discriminator there is: an
+           * error fixed to the glass is the same function of position whichever way the pen
+           * travels, while one produced by a filter reacting to movement follows the
+           * direction of travel and will not line up when reversed.
            */
-          const hs = findStroke(rec, 'h-slow').concat(findStroke(rec, 'h-fast'))
-          if (hs.length >= 2) {
-            const prep = function (c) {
+          const passes = findStroke(rec, 'repeat')
+          if (passes.length >= 2) {
+            const toScreen = function (c) {
               const scale = c.viewScale > 0 ? c.viewScale : 1
-              const pts = dedup(c.raw)
-              const xs = pts.map(function (p) { return p.x * scale })
-              return { xs: xs, w: detrend(xs, 20) }
+              return dedup(c.raw).map(function (p) {
+                return { x: p.x * scale, y: p.y * scale, t: p.t, pressure: p.pressure,
+                         tilt: p.tilt, twist: p.twist }
+              })
             }
-            /*
-             * Keep only the band the ripple lives in, measured in pixels of x.
-             *
-             * Removing a wide average kills the arm sweeping and accelerating, which on a fast
-             * pass is forty times larger than the ripple and would otherwise be the only thing
-             * the correlation sees. Then a narrow average kills the sample-to-sample noise.
-             * What survives is a wobble of a few tens of pixels — the thing being tested.
-             */
-            const bandpass = function (v, lowPx, highPx) {
-              const avg = function (src, half) {
-                const out = new Array(src.length)
-                for (let i = 0; i < src.length; i++) {
-                  const a = Math.max(0, i - half)
-                  const b = Math.min(src.length - 1, i + half)
-                  let m = 0
-                  for (let k = a; k <= b; k++) m += src[k]
-                  out[i] = m / (b - a + 1)
+            const sets = passes.map(toScreen).filter(function (p) { return p.length >= 150 })
+            if (sets.length >= 2) {
+              const ref = d.fitLine(sets[0])
+              const project = function (pts) {
+                const along = []
+                const err = []
+                for (let i = 0; i < pts.length; i++) {
+                  const ux = pts[i].x - ref.cx
+                  const uy = pts[i].y - ref.cy
+                  along.push(ux * ref.dx + uy * ref.dy)
+                  err.push(ux * -ref.dy + uy * ref.dx)
                 }
-                return out
+                // Sort by position, so a reversed pass reads forwards like the others.
+                const order = along.map(function (v, i) { return i })
+                  .sort(function (a, b) { return along[a] - along[b] })
+                return {
+                  along: order.map(function (i) { return along[i] }),
+                  err: order.map(function (i) { return err[i] }),
+                  reversed: along[along.length - 1] < along[0]
+                }
               }
-              const wide = avg(v, Math.round(lowPx / 2))
-              const noLow = v.map(function (x, i) { return x - wide[i] })
-              return avg(noLow, Math.round(highPx / 2))
-            }
-            const A = prep(hs[0])
-            const B = prep(hs[1])
-            // Resample both onto the same grid of x, over the range they share.
-            const lo = Math.max(Math.min.apply(null, A.xs), Math.min.apply(null, B.xs))
-            const hi = Math.min(Math.max.apply(null, A.xs), Math.max.apply(null, B.xs))
-            const N = Math.max(600, Math.round(2400))
-            const sample = function (S) {
-              const out = []
-              const asc = S.xs[S.xs.length - 1] > S.xs[0]
-              const xs = asc ? S.xs : S.xs.slice().reverse()
-              const w = asc ? S.w : S.w.slice().reverse()
-              let j = 0
-              for (let i = 0; i < N; i++) {
-                const at = lo + ((hi - lo) * i) / (N - 1)
-                while (j < xs.length - 2 && xs[j + 1] < at) j++
-                const x0 = xs[j], x1 = xs[j + 1]
-                const f = x1 > x0 ? (at - x0) / (x1 - x0) : 0
-                out.push(w[j] + (w[j + 1] - w[j]) * f)
+              const proj = sets.map(project)
+              const lo = Math.max.apply(null, proj.map(function (p) { return p.along[0] }))
+              const hi = Math.min.apply(null, proj.map(function (p) {
+                return p.along[p.along.length - 1]
+              }))
+              const N = 1200
+              const resample = function (p) {
+                const out = []
+                let j = 0
+                for (let i = 0; i < N; i++) {
+                  const at = lo + ((hi - lo) * i) / (N - 1)
+                  while (j < p.along.length - 2 && p.along[j + 1] < at) j++
+                  const a0 = p.along[j], a1 = p.along[j + 1]
+                  const f = a1 > a0 ? (at - a0) / (a1 - a0) : 0
+                  out.push(p.err[j] + (p.err[j + 1] - p.err[j]) * f)
+                }
+                // Band-pass in pixels of path, around the ripple, dropping the slow bow of
+                // the ruler and the sample-to-sample noise.
+                const avg = function (src, half) {
+                  const o = new Array(src.length)
+                  for (let i = 0; i < src.length; i++) {
+                    const a = Math.max(0, i - half), b = Math.min(src.length - 1, i + half)
+                    let m = 0
+                    for (let k = a; k <= b; k++) m += src[k]
+                    o[i] = m / (b - a + 1)
+                  }
+                  return o
+                }
+                const pxPerStep = (hi - lo) / (N - 1)
+                const wide = avg(out, Math.round(110 / pxPerStep / 2))
+                const noLow = out.map(function (v, i) { return v - wide[i] })
+                return avg(noLow, Math.max(1, Math.round(14 / pxPerStep / 2)))
               }
-              return out
-            }
-            if (hi - lo > 200) {
-              // One pixel of x per grid step, so the band-pass windows below are in pixels.
-              const a = bandpass(sample(A), 90, 12)
-              const b = bandpass(sample(B), 90, 12)
-              let ma = 0, mb = 0
-              for (let i = 0; i < N; i++) { ma += a[i]; mb += b[i] }
-              ma /= N; mb /= N
-              let sab = 0, saa = 0, sbb = 0
-              for (let i = 0; i < N; i++) {
-                const u = a[i] - ma, v = b[i] - mb
-                sab += u * v; saa += u * u; sbb += v * v
+              const bands = proj.map(resample)
+              const corr = function (a, b) {
+                let ma = 0, mb = 0
+                for (let i = 0; i < a.length; i++) { ma += a[i]; mb += b[i] }
+                ma /= a.length; mb /= b.length
+                let sab = 0, saa = 0, sbb = 0
+                for (let i = 0; i < a.length; i++) {
+                  const u = a[i] - ma, v = b[i] - mb
+                  sab += u * v; saa += u * u; sbb += v * v
+                }
+                return sab / Math.sqrt(Math.max(1e-30, saa * sbb))
+              }
+              const pairs = []
+              for (let i = 0; i < bands.length; i++) {
+                for (let j = i + 1; j < bands.length; j++) {
+                  pairs.push({
+                    a: i, b: j,
+                    sameDirection: proj[i].reversed === proj[j].reversed,
+                    correlation: corr(bands[i], bands[j])
+                  })
+                }
               }
               result.repeat = {
-                overlapPx: hi - lo,
-                correlation: sab / Math.sqrt(Math.max(1e-30, saa * sbb)),
-                rmsA: Math.sqrt(saa / N),
-                rmsB: Math.sqrt(sbb / N)
+                passes: bands.length,
+                sharedPx: hi - lo,
+                reversedCount: proj.filter(function (p) { return p.reversed }).length,
+                rms: bands.map(function (b) { return d.spread(b).rms }),
+                pairs: pairs
               }
             }
           }
@@ -326,21 +349,47 @@ app.whenReady().then(async () => {
     }
 
     if (r.repeat) {
-      console.log('  repeatability of two horizontal passes, lined up by x:')
-      console.log('    shared span          ' + num(r.repeat.overlapPx, 0) + ' px')
-      console.log('    correlation          ' + num(r.repeat.correlation, 3))
+      const rp = r.repeat
+      console.log('  repeated diagonal passes, compared sideways in a shared frame:')
       console.log(
-        '    wiggle sizes         ' + num(r.repeat.rmsA, 3) + ' and ' + num(r.repeat.rmsB, 3) + ' px'
+        '    passes               ' + rp.passes + ' (' + rp.reversedCount + ' drawn the other way)'
       )
-      const c = r.repeat.correlation
-      console.log(
-        '    reading              ' +
-          (c > 0.5
-            ? 'strongly repeatable — a property of position, correctable outright'
-            : c > 0.2
-              ? 'partly repeatable — some of it is fixed to position'
-              : 'not repeatable — this part is noise or hand, only filtering can touch it')
-      )
+      console.log('    shared span          ' + num(rp.sharedPx, 0) + ' px')
+      console.log('    ripple per pass      ' + rp.rms.map((v) => num(v, 3)).join(', ') + ' px')
+
+      const same = rp.pairs.filter((p) => p.sameDirection)
+      const opposite = rp.pairs.filter((p) => !p.sameDirection)
+      const mean = (a) => (a.length ? a.reduce((s, p) => s + p.correlation, 0) / a.length : null)
+      const ms = mean(same)
+      const mo = mean(opposite)
+      if (ms !== null) console.log('    same direction       ' + num(ms, 3) + ' correlation')
+      if (mo !== null) console.log('    opposite direction   ' + num(mo, 3) + ' correlation')
+
+      console.log('    reading:')
+      if (ms === null) {
+        console.log('      not enough passes in one direction to say anything')
+      } else if (ms > 0.5) {
+        console.log('      the ripple lands in the same places every pass.')
+        console.log('      It is fixed to the glass, so it can be SUBTRACTED — a correction')
+        console.log('      map, no smoothing, no lag.')
+        if (mo !== null && mo > 0.5) {
+          console.log('      And it survives reversing direction, which rules out a driver')
+          console.log('      filter reacting to movement. This is the geometry of the sensor.')
+        } else if (mo !== null) {
+          console.log('      But it does NOT survive reversing direction, so part of it')
+          console.log('      follows the pen rather than the glass — a driver filter on top')
+          console.log('      of a fixed error.')
+        }
+      } else if (ms > 0.2) {
+        console.log('      partly repeatable: some of the ripple is fixed to position and')
+        console.log('      some is not. A correction map would take out the fixed part; the')
+        console.log('      rest needs a narrow filter at the ripple frequency.')
+      } else {
+        console.log('      the ripple does not land in the same places. It is made by the')
+        console.log('      movement, not by the glass, so a correction map cannot touch it.')
+        console.log('      A notch filter at the ripple frequency is the remaining option,')
+        console.log('      and it costs far less lag than a general stabiliser.')
+      }
     }
   }
   console.log('')
