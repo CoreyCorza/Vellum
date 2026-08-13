@@ -30,6 +30,95 @@ export const IDENTITY_TRANSFORM: PixelTransform = {
   rot: 0
 }
 
+/**
+ * A general 2x3 affine, for accumulating a whole transform session.
+ *
+ * PixelTransform describes ONE handle drag: a scale and a rotation about a single pivot, plus an
+ * offset. Two of those in a row cannot always be written as a third — a non-uniform scale followed
+ * by a rotation shears, and no pivot-and-angle description can hold that. So a session that lets you
+ * move, then scale, then rotate the same pixels needs the general form.
+ */
+export interface Mat {
+  a: number
+  b: number
+  c: number
+  d: number
+  e: number
+  f: number
+}
+
+export const IDENTITY_MAT: Mat = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }
+
+/** The matrix for one handle drag: translate, rotate, scale, translate back. */
+export function matFromTransform(t: PixelTransform): Mat {
+  const cos = Math.cos(t.rot)
+  const sin = Math.sin(t.rot)
+  // R * S
+  const a = cos * t.sx
+  const b = sin * t.sx
+  const c = -sin * t.sy
+  const d = cos * t.sy
+  // Then place it so the pivot maps to pivot + delta.
+  return {
+    a,
+    b,
+    c,
+    d,
+    e: t.ox + t.dx - (a * t.ox + c * t.oy),
+    f: t.oy + t.dy - (b * t.ox + d * t.oy)
+  }
+}
+
+/** `m` applied after `n`. */
+export function matMul(m: Mat, n: Mat): Mat {
+  return {
+    a: m.a * n.a + m.c * n.b,
+    b: m.b * n.a + m.d * n.b,
+    c: m.a * n.c + m.c * n.d,
+    d: m.b * n.c + m.d * n.d,
+    e: m.a * n.e + m.c * n.f + m.e,
+    f: m.b * n.e + m.d * n.f + m.f
+  }
+}
+
+export function matApply(m: Mat, p: Pt): Pt {
+  return { x: m.a * p.x + m.c * p.y + m.e, y: m.b * p.x + m.d * p.y + m.f }
+}
+
+export function isIdentityMat(m: Mat): boolean {
+  return m.a === 1 && m.b === 0 && m.c === 0 && m.d === 1 && m.e === 0 && m.f === 0
+}
+
+/**
+ * The same matrix seen from the other side of a mirror: F * M * F, where F is the reflection.
+ *
+ * Used for everything that must travel with the copy the user grabbed rather than with the canonical
+ * half the pixels are transformed on.
+ */
+export function matMirror(m: Mat, flipX: boolean, flipY: boolean, w: number, h: number): Mat {
+  if (!flipX && !flipY) return m
+  const sx = flipX ? -1 : 1
+  const sy = flipY ? -1 : 1
+  const tx = flipX ? w : 0
+  const ty = flipY ? h : 0
+  const F: Mat = { a: sx, b: 0, c: 0, d: sy, e: tx, f: ty }
+  return matMul(F, matMul(m, F))
+}
+
+/**
+ * Whole-pixel translation when the matrix is nothing but a translation.
+ *
+ * A pure move can be exact, so it is: dragging something away and back returns the pixels it started
+ * with. Once there is a scale or a rotation the pixels are resampled anyway and rounding the offset
+ * would add a second error on top of the first.
+ */
+export function snapMat(m: Mat): Mat {
+  if (m.a === 1 && m.b === 0 && m.c === 0 && m.d === 1) {
+    return { ...m, e: Math.round(m.e), f: Math.round(m.f) }
+  }
+  return m
+}
+
 export function isIdentityTransform(t: PixelTransform): boolean {
   return t.dx === 0 && t.dy === 0 && t.sx === 1 && t.sy === 1 && t.rot === 0
 }
@@ -315,13 +404,8 @@ export class Selection {
    * Draw a floating buffer, transformed, into `dest`. Used for the live preview and for the commit,
    * so what is shown during the drag and what lands at the end cannot disagree.
    */
-  renderFloat(
-    dest: Surface,
-    f: FloatingPixels,
-    t: PixelTransform,
-    symmetry: SymmetryMode
-  ): void {
-    const xf = snappedTransform(t)
+  renderFloat(dest: Surface, f: FloatingPixels, m: Mat, symmetry: SymmetryMode): void {
+    const xf = snapMat(m)
     dest.clear()
     blitFloat(f.pixels, f.from, dest, xf)
     blitMirrors(dest, dest, symmetry)
@@ -336,17 +420,19 @@ export class Selection {
   commit(
     layer: Surface,
     f: FloatingPixels,
-    t: PixelTransform,
+    m: Mat,
     symmetry: SymmetryMode,
     /**
      * How the outline moves, which is not always how the pixels move.
      *
      * The pixels are transformed on the canonical half; the outline lives wherever the user drew it.
-     * When that is the mirrored side, the two need transforms that are reflections of each other.
+     * When that is the mirrored side, the two need matrices that are reflections of each other.
      */
-    outlineT: PixelTransform = t
+    outlineM: Mat = m,
+    /** The outline as it was when the session started, since the matrix is measured from there. */
+    baseOutline: readonly Pt[] = this._outline
   ): void {
-    const xf = snappedTransform(t)
+    const xf = snapMat(m)
 
     this.renderFloat(this.workB, f, xf, symmetry)
     layer.draw(this.workB)
@@ -355,48 +441,36 @@ export class Selection {
     blitFloat(f.mask, f.from, this.mask, xf)
     blitMirrors(this.mask, this.mask, symmetry)
 
-    this._outline = this._outline.map((q) => applyTransform(q, outlineT))
-    this.transformBounds(xf, symmetry)
+    this._outline = baseOutline.map((q) => matApply(outlineM, q))
+    this.boundsFromOutline(symmetry)
     this._active = !this.bounds.isEmpty
   }
 
+  /**
+   * Rebuild the bounds from the outline and its mirrors.
+   *
+   * Replaces transforming the previous bounds' corners, which was only right for a translation: the
+   * corners of an axis-aligned box do not stay the corners of the shape once it is rotated, so the
+   * box grew a little on every turn.
+   */
+  private boundsFromOutline(symmetry: SymmetryMode): void {
+    this.bounds.reset()
+    for (const q of this._outline) {
+      addPointWithMirrors(this.bounds, q.x, q.y, symmetry, this.width, this.height)
+    }
+  }
+
   /** Conservative AABB after `t`, used to size the undo patch before mutating. */
-  boundsAfter(t: PixelTransform, symmetry: SymmetryMode): Rect {
-    const xf = snappedTransform(t)
-    const r = this.rect
-    if (rectIsEmpty(r)) return r
+  boundsAfter(m: Mat, symmetry: SymmetryMode): Rect {
+    if (this._outline.length === 0) return this.rect
     const b = new Bounds()
-    const corners: Pt[] = [
-      { x: r.x, y: r.y },
-      { x: r.x + r.w, y: r.y },
-      { x: r.x, y: r.y + r.h },
-      { x: r.x + r.w, y: r.y + r.h }
-    ]
-    for (const p of corners) {
-      const q = applyTransform(p, xf)
+    for (const p of this._outline) {
+      const q = matApply(m, p)
       addPointWithMirrors(b, q.x, q.y, symmetry, this.width, this.height)
     }
     return b.toRect(this.width, this.height, 2)
   }
 
-  private transformBounds(t: PixelTransform, symmetry: SymmetryMode): void {
-    const r = this.rect
-    this.bounds.reset()
-    if (rectIsEmpty(r)) {
-      this._active = false
-      return
-    }
-    const corners: Pt[] = [
-      { x: r.x, y: r.y },
-      { x: r.x + r.w, y: r.y },
-      { x: r.x, y: r.y + r.h },
-      { x: r.x + r.w, y: r.y + r.h }
-    ]
-    for (const p of corners) {
-      const q = applyTransform(p, t)
-      addPointWithMirrors(this.bounds, q.x, q.y, symmetry, this.width, this.height)
-    }
-  }
 
   private mirrorBounds(mode: SymmetryMode): void {
     if (mode === 'none' || this.bounds.isEmpty) return
@@ -506,12 +580,6 @@ export function unionRect(a: Rect, b: Rect): Rect {
  * back returns the pixels it started with. Once a scale or a rotation is involved the pixels have to
  * be resampled anyway and rounding the offset would only add a second error on top.
  */
-function snappedTransform(t: PixelTransform): PixelTransform {
-  if (t.sx === 1 && t.sy === 1 && t.rot === 0) {
-    return { ...t, dx: Math.round(t.dx), dy: Math.round(t.dy) }
-  }
-  return t
-}
 
 function restrictCanonical(s: Surface, mode: SymmetryMode): void {
   if (mode === 'none') return
@@ -612,20 +680,13 @@ function cropped(s: Surface, r: Rect): HTMLCanvasElement {
  * it rather than added afterwards — otherwise scaling moves the piece relative to where it was cut
  * from, and the content creeps away from the selection outline as you resize.
  */
-function blitFloat(
-  src: HTMLCanvasElement,
-  from: Rect,
-  dest: Surface,
-  t: PixelTransform
-): void {
+function blitFloat(src: HTMLCanvasElement, from: Rect, dest: Surface, m: Mat): void {
   const c = dest.ctx
   c.save()
-  c.imageSmoothingEnabled = t.sx !== 1 || t.sy !== 1 || t.rot !== 0
+  const pureTranslate = m.a === 1 && m.b === 0 && m.c === 0 && m.d === 1
+  c.imageSmoothingEnabled = !pureTranslate
   c.imageSmoothingQuality = 'high'
-  c.translate(t.ox + t.dx, t.oy + t.dy)
-  if (t.rot !== 0) c.rotate(t.rot)
-  c.scale(t.sx, t.sy)
-  c.translate(-t.ox, -t.oy)
+  c.transform(m.a, m.b, m.c, m.d, m.e, m.f)
   c.drawImage(src, from.x, from.y)
   c.restore()
 }

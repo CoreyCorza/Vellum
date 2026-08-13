@@ -215,7 +215,7 @@ const SCRIPT = `(() => {
     for (let i = 3; i < a.length; i += 4) if (Math.abs(a[i] - b[i]) > 8) movedDuringDrag++
   }
   ed.extendTransform({ x: 280, y: 280 })
-  ed.endTransform()
+  ed.endTransform(); ed.commitTransform()
 
   R.noResidue = {
     // The layer is untouched between lift and commit, however many events arrive.
@@ -241,10 +241,10 @@ const SCRIPT = `(() => {
   for (let k = 0; k < 4; k++) {
     ed.beginTransform({ x: 500, y: 510 })
     ed.extendTransform({ x: 600, y: 590 })
-    ed.endTransform()
+    ed.endTransform(); ed.commitTransform()
     ed.beginTransform({ x: 600, y: 590 })
     ed.extendTransform({ x: 500, y: 510 })
-    ed.endTransform()
+    ed.endTransform(); ed.commitTransform()
   }
   let driftAfterRoundTrips = 0
   {
@@ -283,7 +283,7 @@ const SCRIPT = `(() => {
   ed.selectRect(280, 280, 440, 240)
   ed.beginTransform({ x: 500, y: 400 })
   ed.extendTransform({ x: 500, y: 700 })
-  ed.endTransform()
+  ed.endTransform(); ed.commitTransform()
   R.layerScope = {
     onlyActiveMoved: !inkOn(1, 500, 500) && inkOn(1, 500, 800),
     othersUntouched: inkOn(0, 500, 300) && !inkOn(0, 500, 600),
@@ -299,7 +299,7 @@ const SCRIPT = `(() => {
   ed.beginTransform({ x: 400, y: 350 })
   ed.extendTransform({ x: 600, y: 550 })
   const antsMid = antsAt()
-  ed.endTransform()
+  ed.endTransform(); ed.commitTransform()
   R.antsFollow = {
     duringDrag: Math.abs(antsMid[0].x - antsStart[0].x) > 50,
     afterCommit: Math.abs(antsAt()[0].x - antsStart[0].x) > 50
@@ -309,7 +309,7 @@ const SCRIPT = `(() => {
   ed.selectRect(300, 300, 100, 100)
   ed.beginTransform({ x: 900, y: 900 })
   R.strayClickKeepsSelection = ed.selection.active
-  ed.endTransform()
+  ed.endTransform(); ed.commitTransform()
 
   // Under symmetry the handles belong on the shape, not on its union with the mirror.
   ed.deselect()
@@ -320,7 +320,7 @@ const SCRIPT = `(() => {
   ed.beginTransform({ x: 350, y: 350 })
   ed.extendTransform({ x: 420, y: 420 })
   const handlesMid = ed.liveHandleRect
-  ed.endTransform()
+  ed.endTransform(); ed.commitTransform()
   R.symHandles = {
     unionIsWide: unionW > 800,
     handlesOnShape: Math.abs(handleW - 150) < 4,
@@ -358,7 +358,7 @@ const SCRIPT = `(() => {
   ed.extendTransform({ x: mirrorX + 120, y: 400 })
   const antsDuring = ed.liveHandleRect
   R.mirrorGrab.antsFollowTheDrag = antsDuring.x > antsBefore.x + 60
-  ed.endTransform()
+  ed.endTransform(); ed.commitTransform()
 
   const antsAfter = ed.selection.outlineRect
   R.mirrorGrab.antsCommittedRight = antsAfter.x > antsBefore.x + 60
@@ -372,7 +372,7 @@ const SCRIPT = `(() => {
   // A second drag must not destroy anything.
   ed.beginTransform({ x: mirrorX + 120, y: 400 })
   ed.extendTransform({ x: mirrorX + 200, y: 400 })
-  ed.endTransform()
+  ed.endTransform(); ed.commitTransform()
   R.mirrorGrab.secondDragKeepsInk = ink(mirrorX + 200, 400)
 
   ed.setBrush({ symmetry: 'none' })
@@ -403,14 +403,14 @@ const SCRIPT = `(() => {
   ed.beginTransform({ x: box0.x + box0.w, y: box0.y + box0.h })
   // Drag the corner mostly sideways, which unconstrained would stretch it flat.
   ed.extendTransform({ x: box0.x + box0.w * 2, y: box0.y + box0.h * 1.05 }, false)
-  const free = { ...ed.xfNowForTests }
+  const free = { ...ed.xfMatForTests }
   ed.extendTransform({ x: box0.x + box0.w * 2, y: box0.y + box0.h * 1.05 }, true)
-  const shifted = { ...ed.xfNowForTests }
-  ed.endTransform()
+  const shifted = { ...ed.xfMatForTests }
+  ed.endTransform(); ed.commitTransform()
   R.shiftResize = {
-    freeStretches: Math.abs(free.sx - free.sy) > 0.3,
-    shiftKeepsRatio: Math.abs(shifted.sx - shifted.sy) < 1e-9,
-    shiftUsedTheBiggerAxis: shifted.sx > 1.2
+    freeStretches: Math.abs(free.a - free.d) > 0.3,
+    shiftKeepsRatio: Math.abs(shifted.a - shifted.d) < 1e-9,
+    shiftUsedTheBiggerAxis: shifted.a > 1.2
   }
 
   // Rotation turns the pixels, and under symmetry the mirror turns the other way.
@@ -434,10 +434,10 @@ const SCRIPT = `(() => {
   const rotBefore = ed.selection.outlineRect
   ed.beginTransform(rotateHandleAt(rotBefore))
   ed.extendTransform({ x: rotBefore.x + rotBefore.w / 2 + 40, y: rotBefore.y - 10 }, false)
-  const rotT = { ...ed.xfNowForTests }
-  ed.endTransform()
+  const rotT = { ...ed.xfMatForTests }
+  ed.endTransform(); ed.commitTransform()
   R.rotateSym = {
-    turned: Math.abs(rotT.rot) > 0.05,
+    turned: Math.abs(rotT.b) > 0.05,
     stillActive: ed.selection.active,
     // Both halves still have ink: the mirror turned too, the other way.
     bothHalvesInk: (() => {
@@ -452,6 +452,49 @@ const SCRIPT = `(() => {
     })()
   }
   ed.setBrush({ symmetry: 'none' })
+  ed.tool = 'brush'
+  ed.deselect()
+
+  /* ---- 6g. a transform SESSION: lift once, keep transforming ------------- */
+  reset()
+  ed.setBrush({ symmetry: 'none', size: 24, color: '#ff8800' })
+  // A shape only in the middle, with clear canvas either side.
+  stroke(line(500, 400, 560, 400, 20))
+  ed.tool = 'transform'
+  ed.selectRect(480, 380, 100, 40)
+  const centre0 = { x: 530, y: 400 }
+
+  // First drag: move it right by 300.
+  ed.beginTransform(centre0)
+  R.session = { firstArmed: ed.transformGestureActive }
+  ed.extendTransform({ x: centre0.x + 300, y: centre0.y })
+  ed.endTransform(); // fold the drag, but stay floating
+  R.session.stillFloatingAfterFirst = ed.transformSessionActive
+
+  // Second grab: the handles are now 300px to the right. Grabbing there must ARM again.
+  const handleNow = ed.liveHandleRect
+  const grabAt = { x: handleNow.x + handleNow.w / 2, y: handleNow.y + handleNow.h / 2 }
+  ed.beginTransform(grabAt)
+  R.session.secondArmed = ed.transformGestureActive
+  ed.extendTransform({ x: grabAt.x, y: grabAt.y + 200 })
+  ed.endTransform()
+  R.session.stillFloatingAfterSecond = ed.transformSessionActive
+
+  // A third grab where the shape is now (moved right and down) must still respond.
+  const h3 = ed.liveHandleRect
+  ed.beginTransform({ x: h3.x + h3.w / 2, y: h3.y + h3.h / 2 })
+  R.session.thirdArmed = ed.transformGestureActive
+  ed.extendTransform({ x: h3.x + h3.w / 2 + 50, y: h3.y + h3.h / 2 })
+  ed.endTransform()
+
+  // Commit and check the pixels ended where the session left them, and nowhere else.
+  ed.commitTransform()
+  R.session.landedRight =
+    ink(530 + 300 + 50, 600) && !ink(530, 400)
+  // Grabbing empty canvas where the shape ORIGINALLY was must NOT pick anything up.
+  ed.beginTransform({ x: 530, y: 400 })
+  R.session.oldSpotIsDead = !ed.transformGestureActive
+  ed.cancelSelectionGesture()
   ed.tool = 'brush'
   ed.deselect()
 
@@ -496,7 +539,10 @@ const SCRIPT = `(() => {
     R.shiftResize.freeStretches && R.shiftResize.shiftKeepsRatio &&
     R.shiftResize.shiftUsedTheBiggerAxis &&
     R.rotate.nowVertical && R.rotate.selectionSurvives &&
-    R.rotateSym.turned && R.rotateSym.stillActive && R.rotateSym.bothHalvesInk
+    R.rotateSym.turned && R.rotateSym.stillActive && R.rotateSym.bothHalvesInk &&
+    R.session.firstArmed && R.session.stillFloatingAfterFirst &&
+    R.session.secondArmed && R.session.stillFloatingAfterSecond &&
+    R.session.thirdArmed && R.session.landedRight && R.session.oldSpotIsDead
   )
   return R
 })()`

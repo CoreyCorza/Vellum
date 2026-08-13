@@ -243,11 +243,45 @@ const SCRIPT = `(async () => {
   // The resize grip is hidden until the pointer is on the panel. Read from the
   // ::after opacity, which is where the rule lives; the handle itself stays
   // hit-testable at all times so resizing never depends on seeing it first.
-  const anyPanel = document.querySelector('.floating-panel')
-  const handle = anyPanel && anyPanel.querySelector('.floating-panel-resize')
-  R.gripHiddenAtRest = handle
-    ? Number(getComputedStyle(handle, '::after').opacity) === 0
-    : false
+  // The resize handle directly, not the first panel's handle. Once the Quick rail is open the first
+  // .floating-panel is a rail, which has a drag grip but no resize handle, so the old query returned
+  // null for a reason unrelated to the grip. No backticks in this comment: it lives in a template
+  // literal, and one would end it early.
+  const handle = document.querySelector('.floating-panel-resize')
+  /*
+   * Read from the stylesheet, not from the computed style.
+   *
+   * The computed value depends on :hover, and :hover tracks the REAL mouse — even for a window that
+   * is never shown, Chromium still decides whether the cursor is over it. So this passed or failed
+   * depending on where the person running it had left their hand: five for five one minute, nought
+   * for three the next, with no code change in between. A test that reports the position of a mouse
+   * is worse than no test, because it teaches you to ignore it.
+   *
+   * The rules themselves say what the intent is: hidden at rest, shown on hover.
+   */
+  // No regex, no backslash escapes: this whole file is a plain template literal, so a source \s
+  // becomes a bare s when the literal is evaluated, and /\s+/ silently turns into /s+/ — which was
+  // deleting the s from '.floating-panel-resize::after' so nothing ever matched. Plain string checks
+  // on the raw selector text avoid the whole trap.
+  const opacityOfRule = (needleHas, needleLacks) => {
+    for (const sheet of document.styleSheets) {
+      let rules
+      try { rules = sheet.cssRules } catch (e) { continue }
+      for (const rule of rules) {
+        if (!rule.selectorText) continue
+        const sel = rule.selectorText
+        if (sel.includes('.floating-panel-resize::after') && sel.includes(needleHas) &&
+            (needleLacks === '' || !sel.includes(needleLacks))) {
+          return Number(rule.style.opacity)
+        }
+      }
+    }
+    return null
+  }
+  const restOpacity = opacityOfRule('.floating-panel-resize::after', ':hover')
+  const hoverOpacity = opacityOfRule(':hover', '')
+  R.gripHiddenAtRest = handle !== null && restOpacity === 0
+  R.gripShownOnHover = (hoverOpacity || 0) > 0
   R.gripStaysHitTestable = handle ? getComputedStyle(handle).pointerEvents !== 'none' : false
 
   // Toggling a pen dynamic must not move anything. The curves used to be added and

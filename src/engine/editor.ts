@@ -9,10 +9,15 @@ import {
   isIdentityTransform,
   normalisedRect,
   unionRect,
-  applyTransform,
-  mirrorTransform,
   mirrorPoint,
   mirrorRect,
+  matMirror,
+  matMul,
+  matApply,
+  matFromTransform,
+  isIdentityMat,
+  IDENTITY_MAT,
+  type Mat,
   type PixelTransform,
   type SelectionSnapshot,
   type FloatingPixels
@@ -346,8 +351,24 @@ export class Editor {
    * rather than by being chased.
    */
   private xfFloat: FloatingPixels | null = null
-  private xfNow: PixelTransform = IDENTITY_TRANSFORM
   private xfPreview: Surface | null = null
+  /**
+   * A transform SESSION, not one drag.
+   *
+   * Pressing Ctrl+T lifts the selected pixels once. Every drag after that moves, scales and rotates
+   * those same pixels, accumulating into one matrix, until the session is committed. Lifting again on
+   * each drag was the bug: the second drag cut whatever the selection had landed on top of, so a move
+   * picked up pixels that were never selected.
+   *
+   * `xfTotal` is everything the session has done so far, `xfLive` adds the drag in progress. The
+   * outline the matrix is measured against is kept too, since the matrix maps from where the session
+   * started rather than from wherever the last drag left off.
+   */
+  private xfTotal: Mat = IDENTITY_MAT
+  private xfLive: Mat = IDENTITY_MAT
+  private xfBaseOutline: Pt[] = []
+  private xfFlipX = false
+  private xfFlipY = false
 
   private display: HTMLCanvasElement | null = null
   private dsp: CanvasRenderingContext2D | null = null
@@ -477,6 +498,8 @@ export class Editor {
   // -------------------------------------------------------------------- tools
 
   setTool(t: ToolId): void {
+    // Leaving the transform tool puts the pixels down; nothing else can move them.
+    if (this.xfFloat) this.commitTransform()
     this.tool = t
     // The two presets can differ in hardness, so the cursor's tip is stale.
     this.strokes.invalidateTip()
@@ -728,6 +751,8 @@ export class Editor {
   }
 
   selectLayer(index: number): void {
+    // Switching layer with pixels in the air would put them down on the wrong one.
+    this.commitTransform()
     this.doc.activeIndex = clamp(index, 0, this.doc.layers.length - 1)
     this.contentChanged()
     this.invalidate()
@@ -760,9 +785,13 @@ export class Editor {
   // ------------------------------------------------------------------ history
 
   undo(): void {
+    // Undo has to act on committed history, not on a hole waiting to be filled.
+    this.commitTransform()
     this.history.undo()
   }
   redo(): void {
+    // Same as undo: the session is not part of history until it is committed.
+    this.commitTransform()
     this.history.redo()
   }
 
@@ -782,18 +811,24 @@ export class Editor {
   }
 
   selectRect(x: number, y: number, w: number, h: number): void {
+    // A new selection while pixels float would abandon them.
+    this.commitTransform()
     const before = this.selection.snapshot()
     this.selection.setRect(x, y, w, h, this.brush.symmetry)
     this.pushSelectionHistory('Select', before)
   }
 
   selectEllipse(x: number, y: number, w: number, h: number): void {
+    // A new selection while pixels float would abandon them.
+    this.commitTransform()
     const before = this.selection.snapshot()
     this.selection.setEllipse(x, y, w, h, this.brush.symmetry)
     this.pushSelectionHistory('Select', before)
   }
 
   selectLasso(points: readonly Pt[]): void {
+    // A new selection while pixels float would abandon them.
+    this.commitTransform()
     const before = this.selection.snapshot()
     this.selection.setLasso(points, this.brush.symmetry)
     this.pushSelectionHistory('Select', before)
@@ -806,6 +841,8 @@ export class Editor {
   }
 
   deselect(): void {
+    // Deselecting with pixels in the air would leave a hole nothing could fill.
+    this.commitTransform()
     if (!this.selection.active && !this.selDrag) return
     this.selDrag = null
     const before = this.selection.snapshot()
@@ -858,8 +895,16 @@ export class Editor {
     if (!this.selection.active) return
     const layer = this.doc.active
     if (layer.locked) return
-    // The same box the handles are drawn on, so grabbing one works where it looks like it should.
-    const grabbed = this.selection.outlineRect
+    /*
+     * Hit-test the box where the handles actually ARE.
+     *
+     * During a live session the pixels float at the transformed position while the mask still sits
+     * where the selection was made, so the handles are drawn on the transformed box (liveHandleRect)
+     * but were being tested against the original one. Every grab after the first missed, beginTransform
+     * bailed without arming a drag, and because the pointer id was already claimed the tool went
+     * completely dead until you deselected.
+     */
+    const grabbed = this.xfFloat ? this.liveHandleRect : this.selection.outlineRect
     const aabb = grabbed
     const handle = hitTransformHandle(doc, aabb, this.camera.scale)
     if (!handle) {
@@ -869,20 +914,27 @@ export class Editor {
        */
       return
     }
-    this.backup.copyFrom(layer.surface)
-    this.xfSelBefore = this.selection.snapshot()
-    this.xfStartRect = { ...aabb }
-    // The one and only edit to the layer until the gesture ends: the pixels come out.
-    this.xfFloat = this.selection.lift(layer.surface, this.brush.symmetry)
-    if (!this.xfFloat) return
-    this.xfNow = IDENTITY_TRANSFORM
-    this.refreshTransformPreview()
+    // Lift only if the session has not already done so. Everything after that is drawing.
+    const startingSession = !this.xfFloat
+    if (startingSession) {
+      this.backup.copyFrom(layer.surface)
+      this.xfSelBefore = this.selection.snapshot()
+      this.xfStartRect = { ...aabb }
+      this.xfBaseOutline = this.selection.outline.map((q) => ({ ...q }))
+      this.xfFloat = this.selection.lift(layer.surface, this.brush.symmetry)
+      if (!this.xfFloat) return
+      this.xfTotal = IDENTITY_MAT
+      this.xfLive = IDENTITY_MAT
+      this.refreshTransformPreview()
+    }
     const cx = this.doc.width / 2
     const cy = this.doc.height / 2
     const mode = this.brush.symmetry
-    this.xfDirty = false
-    const flipX = (mode === 'x' || mode === 'xy') && doc.x > cx
-    const flipY = (mode === 'y' || mode === 'xy') && doc.y > cy
+    // Only at the start: a session's second drag must not forget that its first one moved something.
+    if (startingSession) this.xfDirty = false
+    // A continued session keeps the side it started on, so the mirrored half stays mirrored.
+    const flipX = startingSession ? (mode === 'x' || mode === 'xy') && doc.x > cx : this.xfFlipX
+    const flipY = startingSession ? (mode === 'y' || mode === 'xy') && doc.y > cy : this.xfFlipY
     /*
      * The drag is recorded in canonical coordinates, because that is the half the pixels are
      * transformed on. Both the anchor and the pointer are reflected into it when the grabbed copy is
@@ -890,6 +942,17 @@ export class Editor {
      * copy's box while the scaling happened on the other side of the canvas.
      */
     const { width: dw, height: dh } = this.doc
+    /*
+     * Latched for the session: the mirrored half stays the mirrored half across several drags.
+     *
+     * Keyed on whether THIS call started the session, not on whether pixels are floating — by this
+     * point they always are, because the lift above just happened, so the flip never latched and a
+     * mirrored grab moved its outline the wrong way again.
+     */
+    if (startingSession) {
+      this.xfFlipX = flipX
+      this.xfFlipY = flipY
+    }
     const canonAabb = mirrorRect(grabbed, flipX, flipY, dw, dh)
     const canonStart = mirrorPoint({ x: doc.x, y: doc.y }, flipX, flipY, dw, dh)
     this.xfDrag = {
@@ -913,8 +976,10 @@ export class Editor {
     const xf = this.xfDrag
     if (!xf || !this.xfFloat) return
     const { width: dw, height: dh } = this.doc
-    this.xfNow = transformFromDrag(xf, mirrorPoint(doc, xf.flipX, xf.flipY, dw, dh), constrain)
-    if (!isIdentityTransform(this.xfNow)) this.xfDirty = true
+    const drag = transformFromDrag(xf, mirrorPoint(doc, xf.flipX, xf.flipY, dw, dh), constrain)
+    // This drag applied on top of everything the session has already done.
+    this.xfLive = matMul(matFromTransform(drag), this.xfTotal)
+    if (!isIdentityTransform(drag)) this.xfDirty = true
     // Redraws the floating pixels only. The layer is not touched, so this costs one small blit
     // rather than a document-sized copy, and nothing has to be undone if the gesture is abandoned.
     this.refreshTransformPreview()
@@ -932,12 +997,12 @@ export class Editor {
     const f = this.xfFloat
     if (!f) return
     if (!this.xfPreview) this.xfPreview = new Surface(this.doc.width, this.doc.height)
-    this.selection.renderFloat(this.xfPreview, f, this.xfNow, this.brush.symmetry)
+    this.selection.renderFloat(this.xfPreview, f, this.xfLive, this.brush.symmetry)
   }
 
-  /** The in-flight transform, for verification scripts. */
-  get xfNowForTests(): PixelTransform {
-    return this.xfNow
+  /** The session's transform including the drag in progress, for verification scripts. */
+  get xfMatForTests(): Mat {
+    return this.xfLive
   }
 
   /** The floating pixels being dragged, for the compositor. Null when nothing is in flight. */
@@ -955,9 +1020,11 @@ export class Editor {
    * A getter rather than a line inside the drawing code so it can be tested without a screenshot.
    */
   get liveOutline(): readonly Pt[] {
-    const o = this.selection.outline
-    if (!this.xfFloat || isIdentityTransform(this.xfNow)) return o
-    return o.map((q) => applyTransform(q, this.outlineTransform))
+    if (!this.xfFloat) return this.selection.outline
+    const m = this.outlineMatrix
+    if (isIdentityMat(m)) return this.selection.outline
+    // Measured from where the session started, not from the last drag.
+    return this.xfBaseOutline.map((q) => matApply(m, q))
   }
 
   /**
@@ -967,10 +1034,9 @@ export class Editor {
    * Dragging the mirrored side of a symmetric selection rightwards is a leftward transform on the
    * canonical half, and applying that to the outline sent it the wrong way.
    */
-  private get outlineTransform(): PixelTransform {
-    const xf = this.xfDrag
-    if (!xf) return this.xfNow
-    return mirrorTransform(this.xfNow, xf.flipX, xf.flipY, this.doc.width, this.doc.height)
+  private get outlineMatrix(): Mat {
+    const m = this.xfDrag ? this.xfLive : this.xfTotal
+    return matMirror(m, this.xfFlipX, this.xfFlipY, this.doc.width, this.doc.height)
   }
 
   /** Bounds the transform handles are drawn on, following the drag. */
@@ -978,24 +1044,45 @@ export class Editor {
     return boundsOfPoints(this.liveOutline, this.doc.width, this.doc.height)
   }
 
+  /**
+   * The pointer came up. Folds this drag into the session and stops there.
+   *
+   * The pixels stay floating so the next drag works on the same ones. Committing here is what let a
+   * second drag pick up whatever the selection had been dropped on top of.
+   */
   endTransform(): void {
-    const xf = this.xfDrag
-    const selBefore = this.xfSelBefore
-    if (!xf || !selBefore) return
-    const f = this.xfFloat
-    const outlineT = this.outlineTransform
+    if (!this.xfDrag) return
     this.xfDrag = null
-    this.xfSelBefore = null
+    this.xfTotal = this.xfLive
+    this.invalidate()
+    this.ui.emit()
+  }
+
+  /** Whether pixels are currently floating, waiting to be put down. */
+  get transformSessionActive(): boolean {
+    return this.xfFloat !== null
+  }
+
+  /**
+   * Put the floating pixels down for good, in one edit with one undo step.
+   *
+   * Called on Enter, and by anything that would otherwise strand them: changing tool, deselecting,
+   * starting a stroke, switching layer, undo. A floating selection nobody ever commits is a hole in
+   * the drawing that no amount of clicking gets rid of.
+   */
+  commitTransform(): void {
+    const f = this.xfFloat
+    const selBefore = this.xfSelBefore
+    if (!f || !selBefore) return
+    const outlineM = this.outlineMatrix
+    const total = this.xfTotal
+    const base = this.xfBaseOutline
     this.xfFloat = null
+    this.xfSelBefore = null
+    this.xfDrag = null
     const layer = this.doc.active
-    if (!f) {
-      this.invalidate()
-      return
-    }
-    // Put the pixels down exactly where the preview showed them, in one edit.
-    this.selection.commit(layer.surface, f, this.xfNow, this.brush.symmetry, outlineT)
+    this.selection.commit(layer.surface, f, total, this.brush.symmetry, outlineM, base)
     if (!this.xfDirty) {
-      // Nothing moved, but the pixels were lifted, so they still have to go back.
       this.contentChanged()
       this.invalidate()
       return
@@ -1024,13 +1111,13 @@ export class Editor {
 
   /** Translate selected pixels. With symmetry, the other side(s) move as mirrors. */
   moveSelection(dx: number, dy: number): void {
-    this.commitTransform({ ...IDENTITY_TRANSFORM, dx, dy })
+    this.applyTransformOnce({ ...IDENTITY_TRANSFORM, dx, dy })
   }
 
   /** Scale selected pixels about (ox, oy), defaulting to the selection centre. */
   scaleSelection(sx: number, sy: number, ox?: number, oy?: number): void {
     const r = this.selection.rect
-    this.commitTransform({
+    this.applyTransformOnce({
       dx: 0,
       dy: 0,
       sx,
@@ -1044,7 +1131,7 @@ export class Editor {
   /** Rotate selected pixels about the selection centre. Radians. */
   rotateSelection(rot: number, ox?: number, oy?: number): void {
     const r = this.selection.outlineRect
-    this.commitTransform({
+    this.applyTransformOnce({
       dx: 0,
       dy: 0,
       sx: 1,
@@ -1083,15 +1170,17 @@ export class Editor {
       this.invalidate()
       return
     }
-    if (this.xfDrag && this.xfSelBefore) {
+    if (this.xfFloat && this.xfSelBefore) {
       // The backup is the layer as it was before the pixels were lifted, so this restores the hole
-      // and its contents together.
+      // and its contents together — the whole session, not just the last drag.
       this.doc.active.surface.copyFrom(this.backup)
       this.selection.restore(this.xfSelBefore)
       this.xfDrag = null
       this.xfSelBefore = null
       this.xfFloat = null
       this.xfDirty = false
+      this.xfTotal = IDENTITY_MAT
+      this.xfLive = IDENTITY_MAT
       this.contentChanged()
       this.invalidate()
       this.ui.emit()
@@ -1100,20 +1189,30 @@ export class Editor {
     this.deselect()
   }
 
-  private commitTransform(t: PixelTransform): void {
+  /**
+   * Apply one transform immediately, as a single undoable edit.
+   *
+   * Used by the menu items and the nudge keys, which are not gestures — there is nothing to preview,
+   * so the pixels are lifted and put straight back down. Any floating session is committed first, so
+   * a menu rotation cannot silently discard a drag in progress.
+   */
+  private applyTransformOnce(t: PixelTransform): void {
     if (!this.selection.active || isIdentityTransform(t)) return
+    this.commitTransform()
     const layer = this.doc.active
     if (layer.locked) return
+    const m = matFromTransform(t)
     const beforeRect = this.selection.rect
-    const afterRect = this.selection.boundsAfter(t, this.brush.symmetry)
+    const afterRect = this.selection.boundsAfter(m, this.brush.symmetry)
     const union = padRect(unionRect(beforeRect, afterRect), this.doc.width, this.doc.height, 2)
     if (rectIsEmpty(union)) return
     const beforePix = layer.surface.extract(union)
     const selBefore = this.selection.snapshot()
     // Lift and put down, the same path a drag takes, so a nudge and a drag cannot behave differently.
+    const base = this.selection.outline.map((q) => ({ ...q }))
     const f = this.selection.lift(layer.surface, this.brush.symmetry)
     if (!f) return
-    this.selection.commit(layer.surface, f, t, this.brush.symmetry)
+    this.selection.commit(layer.surface, f, m, this.brush.symmetry, m, base)
     const selAfter = this.selection.snapshot()
     this.history.push(
       new CompoundCommand('Transform', [

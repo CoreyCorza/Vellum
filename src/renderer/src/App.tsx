@@ -197,6 +197,13 @@ export function App(): JSX.Element {
         case 'l': editor.setTool('select-lasso'); break
         case 'v': editor.setTool('transform'); break
         case 'escape': editor.cancelSelectionGesture(); break
+        // Enter puts floating pixels down, the way it ends a transform everywhere else.
+        case 'enter':
+          if (editor.transformSessionActive) {
+            e.preventDefault()
+            editor.commitTransform()
+          }
+          break
         // Delete or Backspace clears what is selected and keeps the selection, which is what you
         // want when the next move is to draw something else in the same shape.
         case 'delete':
