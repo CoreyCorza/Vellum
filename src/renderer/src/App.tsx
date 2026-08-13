@@ -21,7 +21,7 @@ const DOC_HEIGHT = 1400
 export function App(): JSX.Element {
   const editor = useMemo(() => new Editor(DOC_WIDTH, DOC_HEIGHT), [])
   // Mutable so the pointer layer reads live values without re-binding listeners.
-  const mods = useRef<Modifiers>({ space: false, alt: false, ctrl: false }).current
+  const mods = useRef<Modifiers>({ space: false, alt: false, ctrl: false, shift: false }).current
 
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -134,6 +134,7 @@ export function App(): JSX.Element {
       }
       mods.alt = e.altKey
       mods.ctrl = e.ctrlKey || e.metaKey
+      mods.shift = e.shiftKey
 
       if (e.ctrlKey || e.metaKey) {
         if (k === 'z') {
@@ -196,6 +197,15 @@ export function App(): JSX.Element {
         case 'l': editor.setTool('select-lasso'); break
         case 'v': editor.setTool('transform'); break
         case 'escape': editor.cancelSelectionGesture(); break
+        // Delete or Backspace clears what is selected and keeps the selection, which is what you
+        // want when the next move is to draw something else in the same shape.
+        case 'delete':
+        case 'backspace':
+          if (editor.selection.active) {
+            e.preventDefault()
+            editor.deleteSelection()
+          }
+          break
         case '[': editor.setBrush({ size: Math.max(1, editor.brush.size * 0.85) }); break
         case ']': editor.setBrush({ size: Math.min(400, editor.brush.size * 1.18 + 1) }); break
         case 'f':
@@ -244,6 +254,7 @@ export function App(): JSX.Element {
 
       mods.alt = e.altKey
       mods.ctrl = e.ctrlKey || e.metaKey
+      mods.shift = e.shiftKey
     }
 
     // Alt-tabbing away swallows the keyup, which otherwise leaves a modifier
@@ -252,6 +263,7 @@ export function App(): JSX.Element {
       mods.space = false
       mods.alt = false
       mods.ctrl = false
+      mods.shift = false
       editor.endSizeScrub('keys')
       // The keyup will never arrive. Disarm rather than revert: changing tools
       // while the window is not focused would be a surprise on the way back.

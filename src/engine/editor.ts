@@ -890,21 +890,30 @@ export class Editor {
      * copy's box while the scaling happened on the other side of the canvas.
      */
     const { width: dw, height: dh } = this.doc
+    const canonAabb = mirrorRect(grabbed, flipX, flipY, dw, dh)
+    const canonStart = mirrorPoint({ x: doc.x, y: doc.y }, flipX, flipY, dw, dh)
     this.xfDrag = {
       handle,
-      start: mirrorPoint({ x: doc.x, y: doc.y }, flipX, flipY, dw, dh),
-      aabb: mirrorRect(grabbed, flipX, flipY, dw, dh),
+      start: canonStart,
+      aabb: canonAabb,
+      startAngle: Math.atan2(
+        canonStart.y - (canonAabb.y + canonAabb.h / 2),
+        canonStart.x - (canonAabb.x + canonAabb.w / 2)
+      ),
       flipX,
       flipY
     }
     this.invalidate()
   }
 
-  extendTransform(doc: Pt): void {
+  /**
+   * @param constrain Shift held: proportional resize, axis-locked move, rotation snapped to 15°.
+   */
+  extendTransform(doc: Pt, constrain = false): void {
     const xf = this.xfDrag
     if (!xf || !this.xfFloat) return
     const { width: dw, height: dh } = this.doc
-    this.xfNow = transformFromDrag(xf, mirrorPoint(doc, xf.flipX, xf.flipY, dw, dh))
+    this.xfNow = transformFromDrag(xf, mirrorPoint(doc, xf.flipX, xf.flipY, dw, dh), constrain)
     if (!isIdentityTransform(this.xfNow)) this.xfDirty = true
     // Redraws the floating pixels only. The layer is not touched, so this costs one small blit
     // rather than a document-sized copy, and nothing has to be undone if the gesture is abandoned.
@@ -924,6 +933,11 @@ export class Editor {
     if (!f) return
     if (!this.xfPreview) this.xfPreview = new Surface(this.doc.width, this.doc.height)
     this.selection.renderFloat(this.xfPreview, f, this.xfNow, this.brush.symmetry)
+  }
+
+  /** The in-flight transform, for verification scripts. */
+  get xfNowForTests(): PixelTransform {
+    return this.xfNow
   }
 
   /** The floating pixels being dragged, for the compositor. Null when nothing is in flight. */
@@ -1022,8 +1036,44 @@ export class Editor {
       sx,
       sy,
       ox: ox ?? r.x + r.w / 2,
-      oy: oy ?? r.y + r.h / 2
+      oy: oy ?? r.y + r.h / 2,
+      rot: 0
     })
+  }
+
+  /** Rotate selected pixels about the selection centre. Radians. */
+  rotateSelection(rot: number, ox?: number, oy?: number): void {
+    const r = this.selection.outlineRect
+    this.commitTransform({
+      dx: 0,
+      dy: 0,
+      sx: 1,
+      sy: 1,
+      ox: ox ?? r.x + r.w / 2,
+      oy: oy ?? r.y + r.h / 2,
+      rot
+    })
+  }
+
+  /**
+   * Clear the selected pixels, leaving the selection where it is.
+   *
+   * Delete is not a transform: nothing is lifted and nothing is put down, so it goes straight to the
+   * layer with its own undo patch. The selection survives, because the usual next action is to draw
+   * something else inside the same shape.
+   */
+  deleteSelection(): void {
+    if (!this.selection.active) return
+    const layer = this.doc.active
+    if (layer.locked || !layer.visible) return
+    const rect = padRect(this.selection.rect, this.doc.width, this.doc.height, 2)
+    if (rectIsEmpty(rect)) return
+    const before = layer.surface.extract(rect)
+    layer.surface.draw(this.selection.mask, 1, 'destination-out')
+    this.history.push(new PixelPatch('Delete', layer, rect, before))
+    this.contentChanged()
+    this.invalidate()
+    this.ui.emit()
   }
 
   /** Escape: cancel an in-flight gesture, otherwise deselect. */
@@ -1444,6 +1494,7 @@ export class Editor {
       const r = this.liveHandleRect
       if (!rectIsEmpty(r) && (this.tool === 'transform' || this.xfDrag)) {
         drawTransformHandles(g, r, lw)
+        drawRotateHandle(g, r, lw, scale)
       }
     }
 
@@ -1548,10 +1599,12 @@ type SelectDrag = {
   points: Pt[]
 }
 
-type TransformHandle = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+type TransformHandle = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw' | 'rot'
 
 type TransformDrag = {
   handle: TransformHandle
+  /** Angle from the pivot to the pointer when a rotation began. */
+  startAngle: number
   start: Pt
   aabb: Rect
   flipX: boolean
@@ -1566,8 +1619,19 @@ function padRect(r: Rect, maxW: number, maxH: number, pad: number): Rect {
   return { x, y, w: Math.max(0, x2 - x), h: Math.max(0, y2 - y) }
 }
 
+/** How far above the box the rotate handle sits, in screen pixels. */
+const ROTATE_HANDLE_GAP = 26
+
+export function rotateHandlePos(aabb: Rect, scale: number): Pt {
+  return { x: aabb.x + aabb.w / 2, y: aabb.y - ROTATE_HANDLE_GAP / scale }
+}
+
 function hitTransformHandle(doc: Pt, aabb: Rect, scale: number): TransformHandle | null {
   const rad = 8 / scale
+  // Tested before the others: it sits outside the box, so nothing else can claim it, and testing it
+  // first means a near miss picks rotation rather than the corner behind it.
+  const rp = rotateHandlePos(aabb, scale)
+  if (Math.hypot(doc.x - rp.x, doc.y - rp.y) <= rad * 1.4) return 'rot'
   const pts: [TransformHandle, number, number][] = [
     ['nw', aabb.x, aabb.y],
     ['n', aabb.x + aabb.w / 2, aabb.y],
@@ -1592,35 +1656,68 @@ function hitTransformHandle(doc: Pt, aabb: Rect, scale: number): TransformHandle
   return null
 }
 
-function transformFromDrag(xf: TransformDrag, doc: Pt): PixelTransform {
+function transformFromDrag(xf: TransformDrag, doc: Pt, constrain: boolean): PixelTransform {
   const rawDx = doc.x - xf.start.x
   const rawDy = doc.y - xf.start.y
+  const ox = xf.aabb.x + xf.aabb.w / 2
+  const oy = xf.aabb.y + xf.aabb.h / 2
+
   if (xf.handle === 'move') {
     // Already canonical: beginTransform reflected both the anchor and the pointer, so there is
     // nothing left to negate here. Doing both was the bug.
+    // Shift locks a move to one axis, whichever the hand committed to first.
+    const lockX = constrain && Math.abs(rawDx) >= Math.abs(rawDy)
+    const lockY = constrain && !lockX
     return {
-      dx: rawDx,
-      dy: rawDy,
+      dx: lockY ? 0 : rawDx,
+      dy: lockX ? 0 : rawDy,
       sx: 1,
       sy: 1,
       ox: 0,
-      oy: 0
+      oy: 0,
+      rot: 0
     }
   }
-  const ox = xf.aabb.x + xf.aabb.w / 2
-  const oy = xf.aabb.y + xf.aabb.h / 2
+
+  if (xf.handle === 'rot') {
+    let rot = Math.atan2(doc.y - oy, doc.x - ox) - xf.startAngle
+    // Shift snaps to fifteen degrees, which is what every editor does and what makes a deliberate
+    // right angle or a clean diagonal reachable by hand.
+    if (constrain) {
+      const step = Math.PI / 12
+      rot = Math.round(rot / step) * step
+    }
+    return { dx: 0, dy: 0, sx: 1, sy: 1, ox, oy, rot }
+  }
+
   const hw = Math.max(1e-3, xf.aabb.w / 2)
   const hh = Math.max(1e-3, xf.aabb.h / 2)
   let sx = 1
   let sy = 1
   const h = xf.handle
-  if (h === 'e' || h === 'w' || h === 'ne' || h === 'se' || h === 'nw' || h === 'sw') {
-    sx = clamp(Math.abs(doc.x - ox) / hw, 0.05, 32)
+  const movesX = h === 'e' || h === 'w' || h === 'ne' || h === 'se' || h === 'nw' || h === 'sw'
+  const movesY = h === 'n' || h === 's' || h === 'ne' || h === 'se' || h === 'nw' || h === 'sw'
+  if (movesX) sx = clamp(Math.abs(doc.x - ox) / hw, 0.05, 32)
+  if (movesY) sy = clamp(Math.abs(doc.y - oy) / hh, 0.05, 32)
+
+  /*
+   * Shift keeps the proportions.
+   *
+   * Both axes take the same factor, and which one leads is whichever the hand moved further in — so
+   * dragging a corner mostly sideways scales by the sideways amount. An edge handle only knows about
+   * one axis, so under Shift it applies that factor to both, which is what makes it a proportional
+   * resize rather than a stretch.
+   */
+  if (constrain) {
+    const both = movesX && movesY
+    const factor = both
+      ? Math.abs(doc.x - ox) / hw >= Math.abs(doc.y - oy) / hh ? sx : sy
+      : movesX ? sx : sy
+    sx = factor
+    sy = factor
   }
-  if (h === 'n' || h === 's' || h === 'ne' || h === 'se' || h === 'nw' || h === 'sw') {
-    sy = clamp(Math.abs(doc.y - oy) / hh, 0.05, 32)
-  }
-  return { dx: 0, dy: 0, sx, sy, ox, oy }
+
+  return { dx: 0, dy: 0, sx, sy, ox, oy, rot: 0 }
 }
 
 /**
@@ -1701,6 +1798,31 @@ function strokeMarchingRect(g: CanvasRenderingContext2D, r: Rect, lw: number): v
   g.lineDashOffset = 4 * lw
   g.strokeStyle = 'rgba(255,255,255,.9)'
   g.strokeRect(r.x, r.y, r.w, r.h)
+  g.restore()
+}
+
+/**
+ * The rotate handle: a circle on a stalk above the box.
+ *
+ * Outside the box on purpose, so it cannot be confused with the corner beneath it, and drawn with a
+ * stalk so it reads as attached rather than as a stray dot on the canvas.
+ */
+function drawRotateHandle(g: CanvasRenderingContext2D, r: Rect, lw: number, scale: number): void {
+  const p = rotateHandlePos(r, scale)
+  const rad = 4.5 / scale
+  g.save()
+  g.lineWidth = lw
+  g.beginPath()
+  g.moveTo(r.x + r.w / 2, r.y)
+  g.lineTo(p.x, p.y + rad)
+  g.strokeStyle = 'rgba(0,0,0,.55)'
+  g.stroke()
+  g.beginPath()
+  g.arc(p.x, p.y, rad, 0, Math.PI * 2)
+  g.fillStyle = 'rgba(255,255,255,.95)'
+  g.fill()
+  g.strokeStyle = 'rgba(0,0,0,.7)'
+  g.stroke()
   g.restore()
 }
 

@@ -73,7 +73,7 @@ export function bindWintabInput(
       mods,
       alt: mods.alt,
       ctrl: mods.ctrl,
-      shift: false, // Wintab carries no keyboard shift; tracked mods cover the rest
+      shift: mods.shift,
       primary: !secondary,
       middle: false,
       secondary,
@@ -175,7 +175,8 @@ export function bindWintabInput(
         } else if (intent === 'select') {
           editor.extendSelect(doc)
         } else if (intent === 'transform') {
-          editor.extendTransform(doc)
+          // From the tracked modifiers, since a Wintab packet carries no keyboard state.
+          editor.extendTransform(doc, mods.shift)
         } else if (intent === 'sizeScrub') {
           editor.updateSizeScrub(lx)
         } else {

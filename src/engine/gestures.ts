@@ -7,6 +7,14 @@ export interface Modifiers {
   space: boolean
   alt: boolean
   ctrl: boolean
+  /**
+   * Tracked because Wintab packets carry no keyboard state.
+   *
+   * A display tablet's pen goes through the Wintab path, so anything that depends on a modifier
+   * during a pen drag — holding Shift to resize a selection proportionally, for instance — has to
+   * read it from here rather than from the pointer event, which never arrives.
+   */
+  shift: boolean
 }
 
 /**

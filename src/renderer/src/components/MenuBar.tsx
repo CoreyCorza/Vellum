@@ -112,6 +112,22 @@ export function MenuBar({
           disabled: !editor.selectionActive,
           onSelect: () => editor.deselect()
         },
+        {
+          label: 'Delete selected',
+          shortcut: 'Del',
+          disabled: !editor.selectionActive,
+          onSelect: () => editor.deleteSelection()
+        },
+        {
+          label: 'Rotate selection 90° right',
+          disabled: !editor.selectionActive,
+          onSelect: () => editor.rotateSelection(Math.PI / 2)
+        },
+        {
+          label: 'Rotate selection 90° left',
+          disabled: !editor.selectionActive,
+          onSelect: () => editor.rotateSelection(-Math.PI / 2)
+        },
         { separator: true },
         { label: 'Clear layer', onSelect: () => editor.clearLayer() },
         { separator: true },

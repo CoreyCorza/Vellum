@@ -204,7 +204,8 @@ export function bindPointerInput(
       return
     }
     if (e.pointerId === strokePointerId && editor.transformGestureActive) {
-      editor.extendTransform(editor.camera.screenToDoc(local(e).x, local(e).y))
+      // Shift: proportional resize, axis-locked move, rotation snapped to 15 degrees.
+      editor.extendTransform(editor.camera.screenToDoc(local(e).x, local(e).y), e.shiftKey)
       updateTelemetry(e)
       return
     }

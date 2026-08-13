@@ -35,6 +35,9 @@ const SCRIPT = `(() => {
   const H = ed.doc.height
   const cx = W / 2
 
+  // The rotate handle sits above the box; mirrors the engine's own placement.
+  const rotateHandleAt = (r) => ({ x: r.x + r.w / 2, y: r.y - 26 / ed.camera.scale })
+
   const reset = () => {
     while (ed.doc.layers.length > 1) ed.doc.removeLayer(ed.doc.layers.length - 1)
     ed.doc.activeIndex = 0
@@ -376,6 +379,82 @@ const SCRIPT = `(() => {
   ed.tool = 'brush'
   ed.deselect()
 
+  /* ---- 6f. delete, proportional resize, rotation --------------------------*/
+  reset()
+  ed.setBrush({ symmetry: 'none', size: 24, color: '#ff0000' })
+  stroke(line(300, 300, 700, 300, 40))
+  ed.selectRect(280, 280, 200, 50)
+  const inkedBeforeDelete = ink(350, 300)
+  ed.deleteSelection()
+  R.deleteSel = {
+    clearedInside: !ink(350, 300) && inkedBeforeDelete,
+    keptOutside: ink(650, 300),
+    selectionSurvives: ed.selection.active,
+    undoRestores: (() => { ed.undo(); return ink(350, 300) })()
+  }
+
+  // Shift on a corner scales both axes by the same factor, so proportions hold.
+  reset()
+  ed.setBrush({ symmetry: 'none', size: 20, color: '#00ff00' })
+  stroke(line(400, 400, 600, 400, 30))
+  ed.tool = 'transform'
+  ed.selectRect(380, 380, 240, 40)
+  const box0 = ed.selection.outlineRect
+  ed.beginTransform({ x: box0.x + box0.w, y: box0.y + box0.h })
+  // Drag the corner mostly sideways, which unconstrained would stretch it flat.
+  ed.extendTransform({ x: box0.x + box0.w * 2, y: box0.y + box0.h * 1.05 }, false)
+  const free = { ...ed.xfNowForTests }
+  ed.extendTransform({ x: box0.x + box0.w * 2, y: box0.y + box0.h * 1.05 }, true)
+  const shifted = { ...ed.xfNowForTests }
+  ed.endTransform()
+  R.shiftResize = {
+    freeStretches: Math.abs(free.sx - free.sy) > 0.3,
+    shiftKeepsRatio: Math.abs(shifted.sx - shifted.sy) < 1e-9,
+    shiftUsedTheBiggerAxis: shifted.sx > 1.2
+  }
+
+  // Rotation turns the pixels, and under symmetry the mirror turns the other way.
+  reset()
+  ed.setBrush({ symmetry: 'none', size: 20, color: '#0000ff' })
+  stroke(line(500, 400, 700, 400, 30))
+  ed.selectRect(480, 380, 240, 40)
+  ed.rotateSelection(Math.PI / 2)
+  R.rotate = {
+    // A horizontal bar rotated a quarter turn about its centre becomes vertical.
+    wasHorizontal: true,
+    nowVertical: ink(600, 500) && ink(600, 300) && !ink(700, 400),
+    selectionSurvives: ed.selection.active
+  }
+
+  reset()
+  ed.setBrush({ symmetry: 'x', size: 20, color: '#ff00ff' })
+  stroke(line(500, 400, 620, 400, 30))
+  ed.tool = 'transform'
+  ed.selectRect(480, 380, 160, 40)
+  const rotBefore = ed.selection.outlineRect
+  ed.beginTransform(rotateHandleAt(rotBefore))
+  ed.extendTransform({ x: rotBefore.x + rotBefore.w / 2 + 40, y: rotBefore.y - 10 }, false)
+  const rotT = { ...ed.xfNowForTests }
+  ed.endTransform()
+  R.rotateSym = {
+    turned: Math.abs(rotT.rot) > 0.05,
+    stillActive: ed.selection.active,
+    // Both halves still have ink: the mirror turned too, the other way.
+    bothHalvesInk: (() => {
+      let left = 0
+      let right = 0
+      for (let x = 300; x < W - 300; x += 4) {
+        for (let y = 300; y < 520; y += 4) {
+          if (ink(x, y)) { if (x < cx) left++; else right++ }
+        }
+      }
+      return left > 5 && right > 5
+    })()
+  }
+  ed.setBrush({ symmetry: 'none' })
+  ed.tool = 'brush'
+  ed.deselect()
+
   // ---- 7. deselect / select-all -------------------------------------------
   reset()
   ed.selectRect(10, 10, 40, 40)
@@ -411,7 +490,13 @@ const SCRIPT = `(() => {
     R.mirrorGrab.paintedBoth && R.mirrorGrab.antsStartOnRight &&
     R.mirrorGrab.antsFollowTheDrag && R.mirrorGrab.antsCommittedRight &&
     R.mirrorGrab.pixelsWentRight && R.mirrorGrab.canonicalMirrored &&
-    R.mirrorGrab.outlineHoldsContents && R.mirrorGrab.secondDragKeepsInk
+    R.mirrorGrab.outlineHoldsContents && R.mirrorGrab.secondDragKeepsInk &&
+    R.deleteSel.clearedInside && R.deleteSel.keptOutside &&
+    R.deleteSel.selectionSurvives && R.deleteSel.undoRestores &&
+    R.shiftResize.freeStretches && R.shiftResize.shiftKeepsRatio &&
+    R.shiftResize.shiftUsedTheBiggerAxis &&
+    R.rotate.nowVertical && R.rotate.selectionSurvives &&
+    R.rotateSym.turned && R.rotateSym.stillActive && R.rotateSym.bothHalvesInk
   )
   return R
 })()`

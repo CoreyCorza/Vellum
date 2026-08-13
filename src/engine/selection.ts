@@ -3,7 +3,12 @@ import { Bounds, rectIsEmpty, rectUnion } from './bounds'
 import type { SymmetryMode } from './brush/settings'
 import type { Pt, Rect } from './types'
 
-/** Affine of the form p' = (p - origin) * scale + origin + delta. */
+/**
+ * Affine of the form p' = origin + rotate(scale(p - origin)) + delta.
+ *
+ * Scale first, then rotate, then translate. The order matters and this one is chosen because it is
+ * what a handle drag means: you size the box, and separately you turn it, both about the same pivot.
+ */
 export interface PixelTransform {
   dx: number
   dy: number
@@ -11,6 +16,8 @@ export interface PixelTransform {
   sy: number
   ox: number
   oy: number
+  /** Radians, anticlockwise on screen, about the origin. */
+  rot: number
 }
 
 export const IDENTITY_TRANSFORM: PixelTransform = {
@@ -19,11 +26,12 @@ export const IDENTITY_TRANSFORM: PixelTransform = {
   sx: 1,
   sy: 1,
   ox: 0,
-  oy: 0
+  oy: 0,
+  rot: 0
 }
 
 export function isIdentityTransform(t: PixelTransform): boolean {
-  return t.dx === 0 && t.dy === 0 && t.sx === 1 && t.sy === 1
+  return t.dx === 0 && t.dy === 0 && t.sx === 1 && t.sy === 1 && t.rot === 0
 }
 
 /**
@@ -433,7 +441,14 @@ export function mirrorTransform(
     sx: t.sx,
     sy: t.sy,
     ox: flipX ? w - t.ox : t.ox,
-    oy: flipY ? h - t.oy : t.oy
+    oy: flipY ? h - t.oy : t.oy,
+    /*
+     * A reflection reverses which way round is anticlockwise, so a rotation seen through one mirror
+     * turns the other way — which is what makes a rotated symmetric pair stay symmetric instead of
+     * both halves turning the same direction. Through two mirrors the reversal happens twice and
+     * cancels.
+     */
+    rot: flipX !== flipY ? -t.rot : t.rot
   }
 }
 
@@ -453,9 +468,14 @@ export function mirrorRect(r: Rect, flipX: boolean, flipY: boolean, w: number, h
 }
 
 export function applyTransform(p: Pt, t: PixelTransform): Pt {
+  const ux = (p.x - t.ox) * t.sx
+  const uy = (p.y - t.oy) * t.sy
+  if (t.rot === 0) return { x: t.ox + ux + t.dx, y: t.oy + uy + t.dy }
+  const c = Math.cos(t.rot)
+  const s = Math.sin(t.rot)
   return {
-    x: (p.x - t.ox) * t.sx + t.ox + t.dx,
-    y: (p.y - t.oy) * t.sy + t.oy + t.dy
+    x: t.ox + ux * c - uy * s + t.dx,
+    y: t.oy + ux * s + uy * c + t.dy
   }
 }
 
@@ -479,8 +499,15 @@ export function unionRect(a: Rect, b: Rect): Rect {
   return rectUnion(a, b)
 }
 
+/**
+ * Whole-pixel translation when nothing else is happening.
+ *
+ * A pure move can be exact, so it is: no resampling, no softening, and dragging something away and
+ * back returns the pixels it started with. Once a scale or a rotation is involved the pixels have to
+ * be resampled anyway and rounding the offset would only add a second error on top.
+ */
 function snappedTransform(t: PixelTransform): PixelTransform {
-  if (t.sx === 1 && t.sy === 1) {
+  if (t.sx === 1 && t.sy === 1 && t.rot === 0) {
     return { ...t, dx: Math.round(t.dx), dy: Math.round(t.dy) }
   }
   return t
@@ -593,9 +620,10 @@ function blitFloat(
 ): void {
   const c = dest.ctx
   c.save()
-  c.imageSmoothingEnabled = t.sx !== 1 || t.sy !== 1
+  c.imageSmoothingEnabled = t.sx !== 1 || t.sy !== 1 || t.rot !== 0
   c.imageSmoothingQuality = 'high'
   c.translate(t.ox + t.dx, t.oy + t.dy)
+  if (t.rot !== 0) c.rotate(t.rot)
   c.scale(t.sx, t.sy)
   c.translate(-t.ox, -t.oy)
   c.drawImage(src, from.x, from.y)
