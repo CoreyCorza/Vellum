@@ -12,6 +12,9 @@ where it slots in, so none of this is a rewrite.
 - Undo/redo across layers, bbox-scoped, structural ops included
 - Pan / zoom / rotate, pinch gestures, palm rejection
 - X / Y / XY symmetry
+- Selections: rect, ellipse, lasso. Paint and erase clip to the mask.
+- Transform: move / resize the selected pixels on the active layer
+- Selection + transform lockstep with X / Y / XY symmetry about the document centre
 - Export PNG (native dialog in Electron, download in browser)
 
 ---
@@ -100,12 +103,19 @@ JSON manifest plus one PNG per layer is enough to start; the manifest already
 mirrors `PaintDocument`.
 **Where:** new `engine/io/`, plus two more preload calls.
 
-### 2. Selections
-The biggest missing capability, and the one most likely to force changes
-elsewhere — so do it before the surface area grows.
-A selection is a mask Surface. `Surface` gains a clip parameter; `StrokeEngine`
-intersects dabs with it. Rect / ellipse / lasso / wand.
-**Where:** `engine/selection.ts`, threaded through `Surface` and `stroke.ts`.
+### 2. Selections — BUILT (wand is a follow-up)
+A selection is a mask Surface (`engine/selection.ts`). `Surface.draw` takes an
+optional clip; the compositor and stroke commit pass the mask so paint and erase
+stay inside it. Dabs that cannot touch the selection AABB are skipped.
+
+Rect, ellipse and lasso are live. Transform (`V`) moves and resizes the selected
+*pixels*, not just the marquee. With X / Y / XY symmetry, selecting or
+transforming one side mirrors the counterpart(s) about the document centre so
+both sides stay in lockstep.
+
+**Wand** is deliberately not stubbed. Magic-wand / flood-select needs a
+connected-component walk over the composite, a threshold, and contiguous vs
+global modes — that is its own piece, not an empty button. Follow-up.
 
 ### 3. Brush textures and shaped tips
 `TipCache` already isolates tip generation. Add an image-based mask, tip
