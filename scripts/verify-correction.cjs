@@ -53,7 +53,17 @@ app.whenReady().then(async () => {
       RIPPLE_AMP * Math.sin((2 * Math.PI * x) / RIPPLE_PERIOD) +
       0.12 * Math.sin((2 * Math.PI * x) / 137 + 1.1);
 
-    // A hand: slow wandering, different every pass, several times the distortion in size.
+    /*
+     * A hand that also varies its speed ALONG the stroke, not only across it.
+     *
+     * The first version of this test moved the hand across the stroke only, which left the
+     * along-track channel — the one the calibration reads — perfectly clean. It passed easily
+     * and was worthless: the real calibration then failed on twelve real passes, because a real
+     * arm hurries and dawdles by around a pixel and that lands straight in the measurement.
+     * Measured afterwards: with no along-track variation the table is recovered to within 6% on
+     * twelve passes, with 1 px of it twelve passes gives a table as wrong as it is right, and
+     * with 3 px even two hundred passes is worse than no correction at all.
+     */
     const hand = (seed) => {
       let s = seed;
       const rnd = () => {
@@ -71,8 +81,9 @@ app.whenReady().then(async () => {
       const wob = hand(opts.seed);
       const pts = [];
       const n = opts.n || 900;
+      const along = opts.handAlong || 0;
       for (let i = 0; i < n; i++) {
-        const s = (i / (n - 1)) * opts.length;
+        const s = (i / (n - 1)) * opts.length + (opts.handOn ? wob(i * 3.1) * along : 0);
         const trueX = opts.x0 + s * Math.cos(opts.angle) + (opts.handOn ? wob(s) * opts.handAcross * -Math.sin(opts.angle) : 0);
         const trueY = opts.y0 + s * Math.sin(opts.angle) + (opts.handOn ? wob(s) * opts.handAcross * Math.cos(opts.angle) : 0);
         pts.push({
@@ -170,7 +181,36 @@ app.whenReady().then(async () => {
     const far = d.correct(correction, tableX.origin + tableX.step * tableX.offsets.length + 5000, 0);
     R.untouchedFarAway = Math.abs(far.x - (tableX.origin + tableX.step * tableX.offsets.length + 5000)) < 1e-9;
 
-    // --- 5. averaging is what does the work -----------------------------------
+    /*
+     * --- 5. the limit, recorded as a test ------------------------------------
+     *
+     * With a realistic amount of along-track hand variation, calibrating from the along-track
+     * channel does NOT work at this number of passes, and this asserts that it does not — so
+     * that a future attempt to use it has to confront the measurement rather than rediscover it
+     * on a live tablet. The clean-channel result above is the mechanism working; this is the
+     * channel being unusable, which are different claims.
+     */
+    const noisyCal = [];
+    for (let k = 0; k < 12; k++) {
+      noisyCal.push(d.axisWiggle(
+        pass({ x0: 200, y0: 300 + k * 7, angle: 0, length: 1600, seed: 7 + k * 13,
+               handOn: true, handAcross: 1.0, handAlong: 1.0 }),
+        'x'
+      ));
+    }
+    const noisyTable = d.buildAxisTable(noisyCal, 4);
+    let msq = 0, tsq = 0, mn = 0;
+    for (let i = 0; i < noisyTable.offsets.length; i++) {
+      if (noisyTable.weight[i] < 8) continue;
+      const x = noisyTable.origin + i * noisyTable.step;
+      const want = trueXError(x);
+      msq += (noisyTable.offsets[i] - want) * (noisyTable.offsets[i] - want);
+      tsq += want * want;
+      mn++;
+    }
+    R.noisyChannelMisfit = Math.sqrt(msq / mn) / Math.sqrt(tsq / mn);
+
+    // --- 6. averaging is what does the work -----------------------------------
     // Two passes should be nowhere near as good as forty. If they are, the hand is not being
     // cancelled and something is wrong with the premise.
     const few = d.buildAxisTable(calPasses.slice(0, 2), 4);
@@ -228,6 +268,12 @@ app.whenReady().then(async () => {
   ok('the correction actually moves samples', R.movesTheSample === true, 'no change applied')
   ok('uncalibrated areas are untouched', R.untouchedFarAway === true, 'it guessed')
   ok(
+    'the along-track channel is known to be unusable at this many passes',
+    R.noisyChannelMisfit > 0.7,
+    'misfit ratio ' + R.noisyChannelMisfit.toFixed(2) + ' — if this has genuinely improved, ' +
+      'the real calibration is worth retrying'
+  )
+  ok(
     'averaging many passes beats averaging two',
     R.diagRemoved > R.fewPassesRemoved + 0.08,
     'forty gave ' + pct(R.diagRemoved) + ', two gave ' + pct(R.fewPassesRemoved)
@@ -245,7 +291,8 @@ app.whenReady().then(async () => {
         diagonalNoHand: pct(R.pureRemoved),
         cleanInputChange: pct(R.cleanChange),
         twoPassesOnly: pct(R.fewPassesRemoved),
-        shareOfKnownDistortion: pct(R.shareOfDistortion)
+        shareOfKnownDistortion: pct(R.shareOfDistortion),
+        alongTrackChannelMisfit: R.noisyChannelMisfit.toFixed(2)
       },
       null,
       1
@@ -258,7 +305,7 @@ app.whenReady().then(async () => {
     app.exit(1)
   } else {
     console.log('')
-    console.log('correction: 12/12 — a measured distortion can be subtracted, with no delay')
+    console.log('correction: 13/13 — a measured distortion can be subtracted, with no delay')
     app.exit(0)
   }
 })

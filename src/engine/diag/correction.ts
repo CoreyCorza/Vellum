@@ -101,7 +101,15 @@ export function correct(c: Correction, x: number, y: number): { x: number; y: nu
 export function axisWiggle(
   pts: readonly RawSample[],
   axis: 'x' | 'y',
-  halfWindow = 24
+  /**
+   * Width of the window that defines "smooth", in PIXELS rather than samples.
+   *
+   * It has to be comfortably wider than the ripple, or removing the trend removes the very
+   * thing being measured. Samples are the wrong unit for that: a slow pass at 400 Hz reports
+   * every 0.8 px, so a window of 49 samples is 39 px — narrower than the 40 px ripple, which
+   * would have subtracted the signal from itself and reported almost nothing.
+   */
+  windowPx = 150
 ): { pos: number[]; wiggle: number[] } {
   const v: number[] = []
   // A repeated position is not evidence; left in, duplicates flatten the ripple being sought.
@@ -111,6 +119,12 @@ export function axisWiggle(
     if (q && p.x === q.x && p.y === q.y) continue
     v.push(axis === 'x' ? p.x : p.y)
   }
+  // How far the pen moved per sample, so the window can be set in pixels.
+  let travel = 0
+  for (let i = 1; i < v.length; i++) travel += Math.abs(v[i] - v[i - 1])
+  const perSample = v.length > 1 ? Math.max(1e-6, travel / (v.length - 1)) : 1
+  const halfWindow = Math.max(3, Math.round(windowPx / perSample / 2))
+
   const pos: number[] = []
   const wiggle: number[] = []
   /*
