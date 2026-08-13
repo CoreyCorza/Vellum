@@ -1,5 +1,5 @@
 import type { Surface } from '../surface'
-import { Bounds } from '../bounds'
+import { Bounds, circleHitsRect } from '../bounds'
 import { TipCache } from './tip'
 import type { DabTarget } from '../gl/strokeRenderer'
 import { CurveSampler } from './curve'
@@ -77,6 +77,9 @@ export class StrokeEngine {
   private target: DabTarget | null = null
   private docWidth = 0
   private docHeight = 0
+  /** Selection AABB; dabs that cannot touch it are skipped. Pixel clip is
+   *  applied later at Surface.draw. */
+  private clipRect: import('../types').Rect | null = null
 
   constructor(private settings: () => BrushSettings) {}
 
@@ -101,7 +104,8 @@ export class StrokeEngine {
     erasing: boolean,
     docW: number,
     docH: number,
-    viewScale = 1
+    viewScale = 1,
+    clipRect: import('../types').Rect | null = null
   ): void {
     this.viewScale = Math.max(1e-3, viewScale)
     this.active = true
@@ -109,6 +113,7 @@ export class StrokeEngine {
     this.target = target
     this.docWidth = docW
     this.docHeight = docH
+    this.clipRect = clipRect && clipRect.w > 0 && clipRect.h > 0 ? clipRect : null
     this.points.length = 0
     this.segment = 0
     this.carry = 0
@@ -484,6 +489,7 @@ export class StrokeEngine {
     const r = this.radiusFor(pressure, tilt)
     const a = this.alphaFor(pressure)
     if (a <= 0.001) return
+    if (this.clipRect && !circleHitsRect(x, y, r + 1, this.clipRect)) return
 
     // One call, one draw. The renderer needs the ceiling as well as the flow
     // because the blend is conditional on it — see gl/strokeRenderer.ts. The
