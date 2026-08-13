@@ -190,6 +190,28 @@ app.whenReady().then(async () => {
       for (let k = right; k <= total; k++) p += choose(total, k) * Math.pow(0.5, total)
       return p
     };
+    /*
+     * The stabiliser has to actually be bypassed, not merely flagged. A blind test run with
+     * smoothing on can only return a null result whatever the truth is, which is how one real run
+     * was wasted.
+     *
+     * Checked on the settings the stroke engine is handed, because that is where the bypass acts.
+     * An earlier version tried to see it in the painted stroke and could not: the in-flight point
+     * list is a short tail the spline walker consumes as it goes, so it reports the same swing at
+     * every stabiliser setting, including none at all.
+     */
+    const s0 = ed.brush.stabilise;
+    ed.setBrush({ stabilise: 0.9 });
+    ed.stabiliserBypass = false;
+    R.engineSeesStabiliser = ed.engineBrush.stabilise;
+    R.brushKeepsItWhileBypassed = null;
+    ed.stabiliserBypass = true;
+    R.engineSeesNoneWhenBypassed = ed.engineBrush.stabilise;
+    R.brushKeepsItWhileBypassed = ed.brush.stabilise;
+    ed.stabiliserBypass = false;
+    R.restoredAfterBypass = ed.engineBrush.stabilise;
+    ed.setBrush({ stabilise: s0 });
+
     R.chanceHalfOfTen = byChance(5, 10);
     R.chanceAllOfSix = byChance(6, 6);
     R.chanceNineOfTen = byChance(9, 10);
@@ -239,6 +261,14 @@ app.whenReady().then(async () => {
 
   // Guessing at chance must read as chance, a perfect short run must read as unlikely but not
   // impossible, and getting everything right must be rarer still.
+  ok('the engine normally gets the brush stabiliser', R.engineSeesStabiliser > 0.8,
+    'engine saw ' + R.engineSeesStabiliser)
+  ok('bypassing removes it from what the engine gets', R.engineSeesNoneWhenBypassed === 0,
+    'engine still saw ' + R.engineSeesNoneWhenBypassed +
+      ' — a blind run with smoothing on can only come back null')
+  ok('bypassing leaves the brush itself untouched', R.brushKeepsItWhileBypassed > 0.8,
+    'the brush was changed to ' + R.brushKeepsItWhileBypassed + ', which would dirty the preset')
+  ok('it comes back afterwards', R.restoredAfterBypass > 0.8, 'still ' + R.restoredAfterBypass)
   ok('half right out of ten reads as luck', Math.abs(R.chanceHalfOfTen - 0.623) < 0.01,
     'reported ' + R.chanceHalfOfTen.toFixed(3))
   ok('six out of six reads as unlikely', Math.abs(R.chanceAllOfSix - 0.015625) < 1e-6,
@@ -270,7 +300,7 @@ app.whenReady().then(async () => {
     app.exit(1)
   } else {
     console.log('')
-    console.log('live correction: 14/14 — it reaches the pen, and turning it off restores the raw pen')
+    console.log('live correction: 18/18 — it reaches the pen, and turning it off restores the raw pen')
     app.exit(0)
   }
 })

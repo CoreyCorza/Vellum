@@ -78,6 +78,9 @@ export function ProfilerPanel(): JSX.Element {
 
   const startTrial = (): void => {
     if (beforeTrials.current === null) beforeTrials.current = editor.distortionEnabled
+    // The stabiliser removes exactly the kind of small wobble this test is looking for, so a run
+    // with it on can only ever come back null. Switched off for the duration and restored after.
+    editor.stabiliserBypass = true
     const on = Math.random() < 0.5
     setTrial(on)
     editor.distortionEnabled = on
@@ -104,6 +107,7 @@ export function ProfilerPanel(): JSX.Element {
 
   const endTrials = (): void => {
     setTrial(null)
+    editor.stabiliserBypass = false
     if (beforeTrials.current !== null) {
       editor.distortionEnabled = beforeTrials.current
       beforeTrials.current = null
@@ -123,6 +127,18 @@ export function ProfilerPanel(): JSX.Element {
    * and a small number of trials cannot give more than that. Six out of six is worth more than
    * sixty out of a hundred, and this says so.
    */
+  /**
+   * The score this many trials would need before the result means anything.
+   *
+   * Shown alongside the tally so a middling score is not mistaken for proof of no effect. Fifteen
+   * trials can only prove an effect if you can tell twelve times out of fifteen; noticing
+   * two-thirds of the time is real and would need about forty trials to show.
+   */
+  const needed = (total: number): number => {
+    for (let k = 0; k <= total; k++) if (byChance(k, total) < 0.05) return k
+    return total
+  }
+
   const byChance = (right: number, total: number): number => {
     if (total === 0) return 1
     const choose = (n: number, k: number): number => {
@@ -271,7 +287,7 @@ export function ProfilerPanel(): JSX.Element {
               </div>
               <p className="prof-how">
                 {trial === null
-                  ? 'Switches the correction on or off at random without telling you. Draw a line, say which it was, and it moves straight on to the next one. Wanting it to work cannot help you guess. Eight or ten is enough.'
+                  ? 'Switches the correction on or off at random without telling you. Draw a line, say which it was, and it moves straight on to the next one. Your stabiliser is switched off for the run, since it removes the very thing you are trying to notice. Twelve or more trials.'
                   : `Trial ${tally.total + 1}. Draw a line or two, then answer. You will not be told whether you were right until you stop.`}
               </p>
               <div className="prof-actions">
@@ -315,14 +331,18 @@ export function ProfilerPanel(): JSX.Element {
                   <div className="prof-stat">
                     <span className="prof-stat-k">Reading</span>
                     <span className="prof-stat-v">
-                      {tally.total < 6
-                        ? 'too few trials yet'
-                        : byChance(tally.right, tally.total) < 0.05
-                          ? 'you can tell'
-                          : byChance(tally.right, tally.total) < 0.2
-                            ? 'probably, keep going'
-                            : 'no better than guessing'}
+                      {byChance(tally.right, tally.total) < 0.05
+                        ? 'you can tell'
+                        : byChance(tally.right, tally.total) < 0.2
+                          ? 'probably — carry on'
+                          : 'not shown either way'}
                     </span>
+                  </div>
+                  {/* What this many trials is capable of showing, so a null result is not read
+                      as proof of nothing. A short run can only reveal a strong effect. */}
+                  <div className="prof-stat">
+                    <span className="prof-stat-k">Needed to prove it</span>
+                    <span className="prof-stat-v">{needed(tally.total)} of {tally.total}</span>
                   </div>
                 </div>
               )}

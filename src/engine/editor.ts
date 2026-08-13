@@ -263,6 +263,23 @@ export class Editor {
   distortion: Correction | null = null
   distortionEnabled = true
 
+  /** Draw without the stabiliser for as long as this is set. See the StrokeEngine closure. */
+  stabiliserBypass = false
+
+  /**
+   * The settings the stroke engine is actually being given, which is not always the brush.
+   *
+   * Exists because the difference is otherwise unobservable: a bypassed stabiliser leaves the brush
+   * untouched by design, so there is nothing to read to confirm it took effect. Checking the
+   * painted result instead is not viable — the in-flight point list is a short tail that the
+   * spline walker consumes as it goes, so it shows the same swing whatever the smoothing is, which
+   * cost an afternoon to discover.
+   */
+  get engineBrush(): BrushSettings {
+    const s = this.settingsFor(this.strokes.erasing)
+    return this.stabiliserBypass ? { ...s, stabilise: 0, stabiliseSpeedAdapt: 0 } : s
+  }
+
   get distortionActive(): boolean {
     return this.distortionEnabled && this.distortion !== null
   }
@@ -424,7 +441,19 @@ export class Editor {
     this.compositor = new Compositor(width, height)
     this.glStroke = new GLStrokeRenderer(width, height)
     this.backup = new Surface(width, height)
-    this.strokes = new StrokeEngine(() => this.settingsFor(this.strokes.erasing))
+    this.strokes = new StrokeEngine(() => {
+      /*
+       * The stabiliser is bypassed during a blind test, without touching the brush.
+       *
+       * The test exists to find out whether a sub-pixel positional artefact is noticeable, and a
+       * stabiliser is built specifically to remove small positional variation — leaving it on
+       * guarantees a null result whatever the truth is. One run was thrown away to learn that.
+       *
+       * Done here rather than by writing to the brush, so a test cannot leave the selected preset
+       * marked as edited or quietly change a setting the user chose.
+       */
+      return this.engineBrush
+    })
     this.checker = makeChecker()
 
     this.history.onChange = () => {
