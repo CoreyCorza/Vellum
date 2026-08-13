@@ -1,7 +1,6 @@
 import type { Surface } from '../surface'
 import { Bounds } from '../bounds'
 import { TipCache } from './tip'
-import { StrokeRecorder } from '../diag/capture'
 import type { DabTarget } from '../gl/strokeRenderer'
 import { CurveSampler } from './curve'
 import type { BrushSettings } from './settings'
@@ -70,12 +69,6 @@ export class StrokeEngine {
   /** Camera zoom at stroke start, for the zoom-compensated smoothing length. */
   private viewScale = 1
 
-  /**
-   * Every raw sample, kept so a stroke can be replayed through a different filter later.
-   * Always on: a profiler you have to arm misses the stroke that went wrong.
-   */
-  readonly recorder = new StrokeRecorder()
-
   readonly bounds = new Bounds()
   active = false
   erasing = false
@@ -126,7 +119,6 @@ export class StrokeEngine {
     this.sp = p.pressure
     this.bounds.reset()
     this.spikesRejected = 0
-    this.recorder.begin(p, this.viewScale, 0, 0)
     this.pushStabilised(p, true)
   }
 
@@ -140,7 +132,6 @@ export class StrokeEngine {
       const inst = (Math.hypot(p.x - prev.x, p.y - prev.y) / dt) * 16
       this.speed = lerp(this.speed, inst, 0.35)
     }
-    this.recorder.extend(p)
     this.pushStabilised(p, false)
     this.pump(false)
   }
@@ -153,7 +144,6 @@ export class StrokeEngine {
       const q = this.points[0]
       this.stamp(q.x, q.y, q.pressure, q.tilt) // a tap is a single dab
     }
-    this.recorder.end(this.points)
     this.active = false
     this.target = null
     this.points.length = 0

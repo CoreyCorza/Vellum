@@ -4,8 +4,6 @@ import { Camera } from './camera'
 import { Compositor } from './compositor'
 import { History, PixelPatch, ActionCommand } from './history'
 import { StrokeEngine } from './brush/stroke'
-import type { StrokeRecorder } from './diag/capture'
-import { correct, type Correction } from './diag/correction'
 import { NavDrag } from './gestures'
 import { GLStrokeRenderer } from './gl/strokeRenderer'
 import { DEFAULT_BRUSH, type BrushSettings } from './brush/settings'
@@ -248,79 +246,6 @@ export class Editor {
    * needs to know whether the tool was USED while its key was held, which is
    * what separates "hold E to erase a bit" from "tap E to switch to it".
    */
-  /**
-   * The digitiser's own distortion, measured for this tablet, or null.
-   *
-   * Applied to pen samples and to nothing else. This is not smoothing: the corrected position
-   * of a sample is a function of that sample alone, so there is no window, no memory between
-   * samples, and no delay. Real movement passes through untouched — only the part that was
-   * shown to be a fixed property of the glass is removed.
-   *
-   * Measured, and indexed, in a frame fixed to the screen rather than to the document: the
-   * error belongs to the physical surface, so it has to be looked up by where the pen actually
-   * is, not by where the canvas happens to be scrolled to.
-   */
-  distortion: Correction | null = null
-  distortionEnabled = true
-
-  /** Draw without the stabiliser for as long as this is set. See the StrokeEngine closure. */
-  stabiliserBypass = false
-
-  /**
-   * The settings the stroke engine is actually being given, which is not always the brush.
-   *
-   * Exists because the difference is otherwise unobservable: a bypassed stabiliser leaves the brush
-   * untouched by design, so there is nothing to read to confirm it took effect. Checking the
-   * painted result instead is not viable — the in-flight point list is a short tail that the
-   * spline walker consumes as it goes, so it shows the same swing whatever the smoothing is, which
-   * cost an afternoon to discover.
-   */
-  get engineBrush(): BrushSettings {
-    const s = this.settingsFor(this.strokes.erasing)
-    return this.stabiliserBypass ? { ...s, stabilise: 0, stabiliseSpeedAdapt: 0 } : s
-  }
-
-  get distortionActive(): boolean {
-    return this.distortionEnabled && this.distortion !== null
-  }
-
-  /**
-   * A pen position in viewport pixels, turned into a document position with the digitiser's
-   * distortion taken out on the way.
-   *
-   * Used by both input paths. Pointer and Wintab samples both arrive as viewport coordinates,
-   * so this is the one place the correction belongs — before anything downstream has had a
-   * chance to treat a distorted coordinate as the truth.
-   */
-  penToDoc(sx: number, sy: number): { x: number; y: number } {
-    /*
-     * The profiler always sees the tablet raw.
-     *
-     * Without this the recorder sits downstream of the correction, so once a correction is
-     * loaded every new calibration sweep measures the RESIDUAL rather than the error — and a
-     * capture taken with it on could not be combined with one taken with it off, because the two
-     * would be measuring different things while looking identical. The profiler exists to
-     * measure the hardware, so it gets the hardware.
-     *
-     * The correction's benefit is measured by applying a table to a raw recording offline, which
-     * is how every figure so far was arrived at, so nothing is lost by this.
-     */
-    if (this.profiling) return this.camera.screenToDoc(sx, sy)
-    if (!this.distortionActive) return this.camera.screenToDoc(sx, sy)
-    const hw = this.camera.vw / 2
-    const hh = this.camera.vh / 2
-    const fixed = correct(this.distortion as Correction, sx - hw, sy - hh)
-    return this.camera.screenToDoc(fixed.x + hw, fixed.y + hh)
-  }
-
-  /**
-   * Raw pen samples for the last few strokes, kept for measuring the tablet rather than
-   * for drawing. See diag/capture.ts.
-   */
-  get recorder(): StrokeRecorder {
-    return this.strokes.recorder
-  }
-
   strokesCommitted = 0
 
   /**
@@ -441,19 +366,7 @@ export class Editor {
     this.compositor = new Compositor(width, height)
     this.glStroke = new GLStrokeRenderer(width, height)
     this.backup = new Surface(width, height)
-    this.strokes = new StrokeEngine(() => {
-      /*
-       * The stabiliser is bypassed during a blind test, without touching the brush.
-       *
-       * The test exists to find out whether a sub-pixel positional artefact is noticeable, and a
-       * stabiliser is built specifically to remove small positional variation — leaving it on
-       * guarantees a null result whatever the truth is. One run was thrown away to learn that.
-       *
-       * Done here rather than by writing to the brush, so a test cannot leave the selected preset
-       * marked as edited or quietly change a setting the user chose.
-       */
-      return this.engineBrush
-    })
+    this.strokes = new StrokeEngine(() => this.settingsFor(this.strokes.erasing))
     this.checker = makeChecker()
 
     this.history.onChange = () => {
@@ -628,16 +541,8 @@ export class Editor {
 
   // ------------------------------------------------------------------ strokes
 
-  /**
-   * Whether a stroke is in flight — which in profiler mode means a recording is, since no
-   * ink is being laid.
-   *
-   * Both input paths gate the move and release handlers on this, so leaving it false while
-   * profiling meant the first sample was recorded and every one after it was dropped on the
-   * floor. Caught by a test that drew thirty-one samples and got none back.
-   */
   get strokeActive(): boolean {
-    return this.profiling ? this.recorder.recording : this.strokes.active
+    return this.strokes.active
   }
 
   /** Single-sample pressure spikes rejected during the last stroke. */
@@ -655,51 +560,7 @@ export class Editor {
     return this.strokes.stabilisedPoints
   }
 
-  /**
-   * Profiler mode: samples get recorded and drawn as a bare diagnostic trail, and no ink
-   * is laid down.
-   *
-   * Routed here rather than in the input layer because this is the one place the Pointer
-   * Events path and the Wintab path meet. Intercepting further out would mean doing it
-   * twice and having the two drift.
-   *
-   * Nothing about the brush applies while profiling — no pressure to size, no opacity, no
-   * spline, no stabiliser. The trail has to show the samples as they arrived, or the line
-   * on screen disagrees with the numbers underneath it.
-   */
-  profiling = false
-  /** Called with each raw sample while profiling, for the trail. */
-  onProfileSample: ((p: StrokePoint, phase: 'down' | 'move' | 'up') => void) | null = null
-
-  /**
-   * Record the pen while it hovers, without it ever touching the glass.
-   *
-   * Set by the profiler for the hand-tremor tests, where the whole point is to measure the
-   * hand with the tablet's contact behaviour taken out of it. A hovering pen starts no
-   * stroke, so these samples would otherwise be thrown away.
-   */
-  hoverCapture = false
-
-  captureHover(p: StrokePoint): void {
-    if (!this.hoverCapture) return
-    if (!this.recorder.recording) this.recorder.begin(p, this.camera.scale, this.camera.cx, this.camera.cy)
-    else this.recorder.extend(p)
-    this.onProfileSample?.(p, 'move')
-  }
-
-  /** Close a hover recording and tell the UI, the way endStroke does for a contact test. */
-  endHoverCapture(): void {
-    if (!this.recorder.recording) return
-    this.recorder.end([])
-    this.ui.emit()
-  }
-
   beginStroke(p: StrokePoint, erasing: boolean): void {
-    if (this.profiling) {
-      this.recorder.begin(p, this.camera.scale, this.camera.cx, this.camera.cy)
-      this.onProfileSample?.(p, 'down')
-      return
-    }
     const layer = this.doc.active
     if (layer.locked || !layer.visible) return
     this.strokeLayer = layer
@@ -717,34 +578,12 @@ export class Editor {
   }
 
   extendStroke(p: StrokePoint): void {
-    if (this.profiling) {
-      this.recorder.extend(p)
-      this.onProfileSample?.(p, 'move')
-      this.sampleCount++
-      return
-    }
     this.strokes.extend(p)
     this.sampleCount++
     this.invalidate()
   }
 
   endStroke(): void {
-    if (this.profiling) {
-      // No stabilised path to compare against, which is the point: a profiler recording
-      // is of the tablet, not of the brush engine.
-      this.recorder.end([])
-      /*
-       * Tell the UI. Without this the finished recording sat in the list unnoticed until
-       * some other interaction happened to cause a render, which looked exactly like the
-       * recording having been thrown away.
-       *
-       * ui.emit, not invalidate: invalidate redraws the canvas and is deliberately kept off
-       * React's channel so a pen reporting hundreds of times a second cannot schedule
-       * hundreds of renders. This fires once, when a recording ends.
-       */
-      this.ui.emit()
-      return
-    }
     if (!this.strokes.active) return
     this.strokesCommitted++
     const erasing = this.strokes.erasing

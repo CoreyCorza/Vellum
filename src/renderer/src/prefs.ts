@@ -27,14 +27,6 @@ export interface Prefs {
   hiddenPanels?: string[]
   /** Which brush settings category is showing. */
   brushCategory?: string
-  /**
-   * The measured distortion for this tablet, kept so it survives a restart.
-   *
-   * Stored as it was fitted rather than recomputed, because fitting it needs a set of ruler
-   * sweeps that are not going to be repeated every launch.
-   */
-  distortion?: unknown
-  distortionEnabled?: boolean
   /** The whole shelf, since presets can now be added, renamed and deleted. */
   presets: BrushPreset[]
 }
@@ -103,34 +95,6 @@ export const DEFAULT_PREFS: Prefs = {
   presets: BUILT_IN_PRESETS.map((p) => ({ ...p, settings: presetSettings(p) }))
 }
 
-/**
- * A stored correction, checked before it is trusted.
- *
- * It reaches the pen path directly, so a malformed table would either crash a stroke or move
- * every sample by a nonsense amount. Anything unexpected is discarded rather than repaired.
- */
-function sanitiseDistortion(v: unknown): unknown {
-  if (!v || typeof v !== 'object') return undefined
-  const axis = (a: unknown): unknown => {
-    if (!a || typeof a !== 'object') return null
-    const t = a as Record<string, unknown>
-    const nums = (x: unknown): boolean =>
-      Array.isArray(x) && x.length > 1 && x.every((n) => typeof n === 'number' && Number.isFinite(n))
-    if (typeof t.step !== 'number' || !(t.step > 0)) return null
-    if (typeof t.origin !== 'number' || !Number.isFinite(t.origin)) return null
-    if (!nums(t.offsets) || !nums(t.weight)) return null
-    if ((t.offsets as number[]).length !== (t.weight as number[]).length) return null
-    // A correction of more than a few pixels is not a digitiser ripple; it is a bad fit.
-    if ((t.offsets as number[]).some((n) => Math.abs(n) > 8)) return null
-    return { step: t.step, origin: t.origin, offsets: t.offsets, weight: t.weight }
-  }
-  const o = v as Record<string, unknown>
-  const x = axis(o.x)
-  const y = axis(o.y)
-  if (!x && !y) return undefined
-  return { x, y, note: typeof o.note === 'string' ? o.note : undefined }
-}
-
 export function loadPrefs(): Prefs {
   try {
     const raw = localStorage.getItem(KEY)
@@ -157,10 +121,7 @@ export function loadPrefs(): Prefs {
       hiddenPanels: Array.isArray(parsed.hiddenPanels)
         ? parsed.hiddenPanels.filter((x): x is string => typeof x === 'string')
         : undefined,
-      brushCategory: typeof parsed.brushCategory === 'string' ? parsed.brushCategory : undefined,
-      distortion: sanitiseDistortion(parsed.distortion),
-      distortionEnabled:
-        typeof parsed.distortionEnabled === 'boolean' ? parsed.distortionEnabled : undefined
+      brushCategory: typeof parsed.brushCategory === 'string' ? parsed.brushCategory : undefined
     }
   } catch {
     return { ...DEFAULT_PREFS }

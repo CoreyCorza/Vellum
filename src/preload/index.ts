@@ -11,8 +11,6 @@ const api = {
   isElectron: true as const,
   savePng: (bytes: Uint8Array, defaultName: string): Promise<string | null> =>
     ipcRenderer.invoke('file:savePng', bytes, defaultName),
-  saveText: (text: string, defaultName: string): Promise<string | null> =>
-    ipcRenderer.invoke('file:saveText', text, defaultName),
 
   // --- Wintab pen input -----------------------------------------------------
   wintabStatus: (): Promise<unknown> => ipcRenderer.invoke('wintab:status'),

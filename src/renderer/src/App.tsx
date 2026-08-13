@@ -14,10 +14,6 @@ import { QuickRail } from './components/QuickRail'
 import { savePng } from './platform'
 import { clamp, type ToolId } from '@engine/types'
 import type { Modifiers } from '@engine/input'
-import * as diagAnalysis from '@engine/diag/analysis'
-import * as diagCorrection from '@engine/diag/correction'
-import * as diagFit from '@engine/diag/fit'
-import * as diagShapes from '@engine/diag/shapes'
 
 const DOC_WIDTH = 2048
 const DOC_HEIGHT = 1400
@@ -268,27 +264,11 @@ export function App(): JSX.Element {
     editor.camera.scale = clamp(editor.camera.scale, 0.02, 64)
   }, [editor])
 
-  /**
-   * Restore the tablet's measured distortion correction.
-   *
-   * Outside the debug block on purpose: this is a real feature rather than a diagnostic, and a
-   * correction that only applied in a debug build would be useless.
-   */
-  useEffect(() => {
-    const p = loadPrefs()
-    if (p.distortion) editor.distortion = p.distortion as never
-    if (typeof p.distortionEnabled === 'boolean') editor.distortionEnabled = p.distortionEnabled
-  }, [editor])
-
   // Debug handle for the console and for scripts/verify.cjs. Dev builds always
   // get it; production only with ?debug, so it isn't sitting in a shipped app.
   useEffect(() => {
     if (import.meta.env.DEV || location.search.includes('debug')) {
       ;(window as unknown as { editor: Editor }).editor = editor
-      // The analysis functions too, so a recorded stroke can be measured from the
-      // console and from the verification scripts without going through the UI.
-      ;(window as unknown as { diag: unknown }).diag = { ...diagAnalysis, ...diagCorrection, ...diagFit, ...diagShapes }
-      editor.recorder.devicePixelRatio = window.devicePixelRatio || 1
     }
   }, [editor])
 

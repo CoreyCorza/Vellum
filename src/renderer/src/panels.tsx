@@ -14,14 +14,13 @@ export const PANELS = [
   { id: 'brushes-panel', label: 'Brushes' },
   { id: 'color-panel', label: 'Colour' },
   { id: 'layers-panel', label: 'Layers' },
-  { id: 'quick-rail', label: 'Quick rail' },
-  { id: 'profiler-panel', label: 'Tablet Profiler' }
+  { id: 'quick-rail', label: 'Quick rail' }
 ] as const
 
 export type PanelId = (typeof PANELS)[number]['id']
 
 /** Off unless asked for: it duplicates controls that already have a home. */
-const DEFAULT_HIDDEN: PanelId[] = ['quick-rail', 'profiler-panel']
+const DEFAULT_HIDDEN: PanelId[] = ['quick-rail']
 
 interface PanelVisibility {
   isOpen: (id: string) => boolean

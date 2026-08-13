@@ -5,7 +5,6 @@ import { LayersPanel } from './LayersPanel'
 import { FloatingPanel } from './FloatingPanel'
 import { CurveEditor } from './CurveEditor'
 import { PresetBox } from './PresetBox'
-import { ProfilerPanel } from './ProfilerPanel'
 import { StrokePreview } from './StrokePreview'
 import { BrushCategories, type BrushCategory } from './BrushCategories'
 import { RotationBody, ScatterBody, TextureBody, TipBody } from './PlannedSections'
@@ -231,8 +230,6 @@ export function BrushPanel(): JSX.Element {
       </FloatingPanel>
 
       <PresetBox />
-
-      <ProfilerPanel />
 
       <FloatingPanel id="color-panel" title="Colour" initialTop={10} initialRight={240}>
         <ColorPicker
