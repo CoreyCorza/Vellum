@@ -82,7 +82,14 @@ app.whenReady().then(async () => {
         for (const text of texts) {
           const parsed = JSON.parse(text)
           for (const c of parsed.recorded) {
-            if (c.label !== 'repeat' && c.label !== 'check' && c.label !== 'd-slow') continue
+            /*
+             * Any recording that turns out to contain repeated full-length passes over one line
+             * is a ruler sweep, whatever it was labelled. The label is a hint about intent; the
+             * shape of the stroke is the evidence, and the pass splitter downstream discards
+             * anything that is not a sweep.
+             */
+            if (c.label === 'still' || c.label === 'hover' || c.label === 'braced' ||
+                c.label === 'press') continue
             /*
              * Into a frame fixed to the GLASS, not to the document.
              *
