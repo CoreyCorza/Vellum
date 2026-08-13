@@ -1,6 +1,6 @@
 import type { Editor } from './editor'
 import type { Pt, ToolId } from './types'
-import { clamp } from './types'
+import { clamp, isSelectTool } from './types'
 import { MAX_ZOOM, MIN_ZOOM } from './camera'
 
 export interface Modifiers {
@@ -18,7 +18,7 @@ export interface Modifiers {
  * the Wintab path ended up painting underneath floating panels and ignoring
  * space-to-pan.
  */
-export type Intent = 'pan' | 'rotate' | 'zoom' | 'sizeScrub' | 'pick' | 'paint' | 'ignore'
+export type Intent = 'pan' | 'rotate' | 'zoom' | 'sizeScrub' | 'pick' | 'paint' | 'select' | 'transform' | 'ignore'
 
 export interface IntentInput {
   mods: Modifiers
@@ -43,6 +43,8 @@ export function decideIntent(i: IntentInput): Intent {
   if (i.middle && i.shift) return 'rotate'
   if (i.middle || i.secondary || i.mods.space) return 'pan'
   if (i.tool === 'picker' || i.alt) return 'pick'
+  if (isSelectTool(i.tool) && i.primary) return 'select'
+  if (i.tool === 'transform' && i.primary) return 'transform'
   return 'paint'
 }
 

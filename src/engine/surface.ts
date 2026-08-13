@@ -73,14 +73,23 @@ export class Surface {
     c.restore()
   }
 
-  /** Draw another surface over this one. */
+  /** Draw another surface over this one.
+   *
+   *  `clip`, when given, is a mask Surface: src's alpha is multiplied by clip's
+   *  alpha before blending. That is how a selection clips a stroke — the dab
+   *  loop never has to know about it. */
   draw(
     src: DrawSource,
     opacity = 1,
     op: GlobalCompositeOperation = 'source-over',
-    r?: Rect
+    r?: Rect,
+    clip?: DrawSource | null
   ): void {
     if (opacity <= 0) return
+    if (clip) {
+      blitClipped(this, src, opacity, op, r, clip)
+      return
+    }
     const c = this.ctx
     c.save()
     c.globalAlpha = opacity
@@ -142,4 +151,41 @@ export class Surface {
       )
     })
   }
+}
+
+/** One document-sized scratch, reused so a clipped blit does not allocate. */
+let clipScratch: Surface | null = null
+
+function scratchFor(w: number, h: number): Surface {
+  if (!clipScratch || clipScratch.width !== w || clipScratch.height !== h) {
+    clipScratch = new Surface(w, h)
+  }
+  return clipScratch
+}
+
+function blitClipped(
+  dest: Surface,
+  src: DrawSource,
+  opacity: number,
+  op: GlobalCompositeOperation,
+  r: Rect | undefined,
+  clip: DrawSource
+): void {
+  const box = r ?? { x: 0, y: 0, w: dest.width, h: dest.height }
+  if (rectIsEmpty(box)) return
+  const tmp = scratchFor(dest.width, dest.height)
+  const t = tmp.ctx
+  t.save()
+  t.globalCompositeOperation = 'copy'
+  t.clearRect(box.x, box.y, box.w, box.h)
+  t.drawImage(src.canvas, box.x, box.y, box.w, box.h, box.x, box.y, box.w, box.h)
+  t.globalCompositeOperation = 'destination-in'
+  t.drawImage(clip.canvas, box.x, box.y, box.w, box.h, box.x, box.y, box.w, box.h)
+  t.restore()
+  const c = dest.ctx
+  c.save()
+  c.globalAlpha = opacity
+  c.globalCompositeOperation = op
+  c.drawImage(tmp.canvas, box.x, box.y, box.w, box.h, box.x, box.y, box.w, box.h)
+  c.restore()
 }

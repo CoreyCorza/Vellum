@@ -44,7 +44,8 @@ export class Compositor {
     doc: PaintDocument,
     strokeBuf: DrawSource | null,
     strokeAlpha: number,
-    strokeOp: GlobalCompositeOperation
+    strokeOp: GlobalCompositeOperation,
+    clip?: DrawSource | null
   ): Surface {
     const activeIndex = doc.activeIndex
 
@@ -65,7 +66,7 @@ export class Compositor {
     if (active.visible && active.opacity > 0) {
       if (strokeBuf) {
         this.scratch.copyFrom(active.surface)
-        this.scratch.draw(strokeBuf, strokeAlpha, strokeOp)
+        this.scratch.draw(strokeBuf, strokeAlpha, strokeOp, undefined, clip)
         this.out.draw(this.scratch, active.opacity, blendToComposite(active.blend))
       } else {
         this.out.draw(active.surface, active.opacity, blendToComposite(active.blend))
