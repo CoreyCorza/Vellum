@@ -1161,11 +1161,7 @@ export class Editor {
     // Cursor ring in screen space, so it stays crisp at any zoom. The size ring is
     // NOT drawn here — it goes on the overlay, above the panels.
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0)
-    if (
-      !this.brushPreview.active &&
-      this.cursor.visible &&
-      isPaintTool(this.tool)
-    ) {
+    if (!this.brushPreview.active && this.cursor.visible) {
       this.drawCursor(g)
     }
 
@@ -1179,8 +1175,12 @@ export class Editor {
    */
   private drawCursor(g: CanvasRenderingContext2D): void {
     const { x, y } = this.cursor
+    // Select / transform / picker hide the OS cursor like paint does, so they
+    // need a drawn stand-in. A brush ring is the wrong shape; use the dual-tone
+    // crosshair, which stays visible on any paper.
+    const style = isPaintTool(this.tool) ? this.cursorStyle : 'crosshair'
 
-    if (this.cursorStyle === 'dot') {
+    if (style === 'dot') {
       // Snapped to the pixel grid, otherwise a 1px dot antialiases into a
       // smudge and stops being the precise thing it exists to be.
       const px = Math.round(x)
@@ -1192,7 +1192,7 @@ export class Editor {
       return
     }
 
-    if (this.cursorStyle === 'crosshair') {
+    if (style === 'crosshair') {
       const gap = 3
       const arm = 9
       // half-pixel offset keeps 1px lines crisp rather than 2px and grey
