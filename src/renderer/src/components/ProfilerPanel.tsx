@@ -84,23 +84,36 @@ export function ProfilerPanel(): JSX.Element {
     editor.ui.emit()
   }
 
+  /**
+   * Answer, and roll straight into the next trial.
+   *
+   * A test worth trusting needs eight or ten answers, and the first version made you press a
+   * button between every one of them, which turns a two minute check into a chore and invites
+   * you to stop early — exactly when the tally is least meaningful. Now one press starts a run
+   * and the rest is draw, answer, draw, answer.
+   *
+   * Whether each guess was right is deliberately not shown until the run ends. Being told would
+   * change how the next line is drawn and how the next answer is chosen, which is the difference
+   * between a blind test and a coaching session.
+   */
   const guess = (saidOn: boolean): void => {
     if (trial === null) return
     setTally((t) => ({ right: t.right + (saidOn === trial ? 1 : 0), total: t.total + 1 }))
-    setTrial(null)
-    // Left off between trials so the next one starts from the same place either way.
-    editor.distortionEnabled = false
-    editor.ui.emit()
+    startTrial()
   }
 
   const endTrials = (): void => {
     setTrial(null)
-    setTally({ right: 0, total: 0 })
     if (beforeTrials.current !== null) {
       editor.distortionEnabled = beforeTrials.current
       beforeTrials.current = null
-      editor.ui.emit()
     }
+    editor.ui.emit()
+  }
+
+  const startOver = (): void => {
+    endTrials()
+    setTally({ right: 0, total: 0 })
   }
 
   /**
@@ -258,13 +271,13 @@ export function ProfilerPanel(): JSX.Element {
               </div>
               <p className="prof-how">
                 {trial === null
-                  ? 'Switches the correction on or off at random without telling you. Draw, then say which it was. Wanting it to work cannot help you guess.'
-                  : 'Drawing now — correction is on or off, and you are not being told which. Draw a few lines, then choose.'}
+                  ? 'Switches the correction on or off at random without telling you. Draw a line, say which it was, and it moves straight on to the next one. Wanting it to work cannot help you guess. Eight or ten is enough.'
+                  : `Trial ${tally.total + 1}. Draw a line or two, then answer. You will not be told whether you were right until you stop.`}
               </p>
               <div className="prof-actions">
                 {trial === null ? (
                   <button className="btn" onClick={startTrial}>
-                    Draw a blind trial
+                    {tally.total > 0 ? 'Carry on' : 'Start blind test'}
                   </button>
                 ) : (
                   <>
@@ -274,15 +287,18 @@ export function ProfilerPanel(): JSX.Element {
                     <button className="btn" onClick={() => guess(false)}>
                       It was off
                     </button>
+                    <button className="btn" onClick={endTrials}>
+                      Stop
+                    </button>
                   </>
                 )}
-                {tally.total > 0 && (
-                  <button className="btn" onClick={endTrials}>
-                    Reset
+                {trial === null && tally.total > 0 && (
+                  <button className="btn" onClick={startOver}>
+                    Start over
                   </button>
                 )}
               </div>
-              {tally.total > 0 && (
+              {tally.total > 0 && trial === null && (
                 <div className="prof-report">
                   <div className="prof-stat">
                     <span className="prof-stat-k">Correct</span>
