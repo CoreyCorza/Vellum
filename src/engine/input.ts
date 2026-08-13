@@ -1,6 +1,6 @@
 import type { Editor } from './editor'
 import type { Pt, StrokePoint } from './types'
-import { clamp } from './types'
+import { clamp, isSelectTool } from './types'
 
 export type { Modifiers } from './gestures'
 
@@ -154,6 +154,16 @@ export function bindPointerInput(
     }
 
     strokePointerId = e.pointerId
+    if (isSelectTool(editor.tool)) {
+      editor.beginSelect(doc)
+      updateTelemetry(e)
+      return
+    }
+    if (editor.tool === 'transform') {
+      editor.beginTransform(doc)
+      updateTelemetry(e)
+      return
+    }
     editor.beginStroke(toStrokePoint(e), eraserEnd || editor.tool === 'eraser')
     updateTelemetry(e)
   }
@@ -188,6 +198,17 @@ export function bindPointerInput(
 
     if (nav.move(editor, e.clientX, e.clientY)) return
 
+    if (e.pointerId === strokePointerId && editor.selectGestureActive) {
+      editor.extendSelect(editor.camera.screenToDoc(local(e).x, local(e).y))
+      updateTelemetry(e)
+      return
+    }
+    if (e.pointerId === strokePointerId && editor.transformGestureActive) {
+      editor.extendTransform(editor.camera.screenToDoc(local(e).x, local(e).y))
+      updateTelemetry(e)
+      return
+    }
+
     if (!editor.strokeActive || e.pointerId !== strokePointerId) {
       updateTelemetry(e)
       return
@@ -215,8 +236,10 @@ export function bindPointerInput(
     if (touches.size < 2) gesture = null
     nav.end()
     editor.endSizeScrub('pointer')
-    if (editor.strokeActive && e.pointerId === strokePointerId) {
-      editor.endStroke()
+    if (e.pointerId === strokePointerId) {
+      if (editor.strokeActive) editor.endStroke()
+      if (editor.selectGestureActive) editor.endSelect()
+      if (editor.transformGestureActive) editor.endTransform()
       strokePointerId = -1
     }
   }
