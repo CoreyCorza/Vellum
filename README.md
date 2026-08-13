@@ -64,6 +64,9 @@ it is what makes the renderer swappable and the engine testable headlessly.
 | | |
 |---|---|
 | `B` / `E` / `I` | brush / eraser / eyedropper |
+| `R` / `O` / `L` | rectangular / elliptical / lasso selection |
+| `V` | transform selected pixels (move / resize) |
+| `Ctrl+A` / `Ctrl+D` / `Esc` | select all / deselect / cancel |
 | hold `Alt` | temporary eyedropper |
 | `[` `]` | size down / up |
 | `Ctrl` + wheel | size |
@@ -269,6 +272,9 @@ the test's own pixel-counting helper, not the app.
 | blend modes apply (multiply of red × green → black) | ✓ |
 | hidden layers excluded from the composite | ✓ |
 | symmetry mirrors about the document centre | ✓ |
+| rect / ellipse / lasso selection; paint and erase clip to it | ✓ |
+| transform moves the selected pixels, undoable | ✓ |
+| selecting or transforming one side locksteps the mirrored side(s) | ✓ |
 | eraser removes pixels and undoes exactly | ✓ |
 | history cost is the bounding box, not the canvas (0.36% of full) | ✓ |
 | pen-down 0.01 ms · pen-up 0.33 ms · stroke 2.63 ms | ✓ |
