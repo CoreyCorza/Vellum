@@ -102,6 +102,12 @@ export function bindWintabInput(
       case 'paint':
         editor.beginStroke(toStrokePoint(s, lx, ly), s.inverted || editor.tool === 'eraser')
         break
+      case 'select':
+        editor.beginSelect(editor.camera.screenToDoc(lx, ly))
+        break
+      case 'transform':
+        editor.beginTransform(editor.camera.screenToDoc(lx, ly))
+        break
       case 'ignore':
       default:
         break
@@ -110,6 +116,8 @@ export function bindWintabInput(
 
   const endPress = (): void => {
     if (intent === 'paint' && editor.strokeActive) editor.endStroke()
+    if (intent === 'select' && editor.selectGestureActive) editor.endSelect()
+    if (intent === 'transform' && editor.transformGestureActive) editor.endTransform()
     if (intent === 'sizeScrub') editor.endSizeScrub('pointer')
     nav.end()
     intent = 'ignore'
@@ -164,6 +172,10 @@ export function bindWintabInput(
       if (tipDown || barrelDown) {
         if (intent === 'paint') {
           if (editor.strokeActive) editor.extendStroke(toStrokePoint(s, lx, ly))
+        } else if (intent === 'select') {
+          editor.extendSelect(doc)
+        } else if (intent === 'transform') {
+          editor.extendTransform(doc)
         } else if (intent === 'sizeScrub') {
           editor.updateSizeScrub(lx)
         } else {
