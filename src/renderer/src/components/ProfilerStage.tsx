@@ -68,6 +68,24 @@ const TESTS: Test[] = [
     how: 'Ruler on a diagonal. Draw the same slow pass four times without moving the ruler at all — one recording each. Then two more going back the other way along the same edge. This is the test that decides whether the ripple can be cancelled with no lag.',
     contact: true
   },
+  {
+    id: 'cal-h',
+    label: 'Calibrate: horizontal',
+    how: 'Ruler horizontal. Draw a slow pass edge to edge, then move the ruler down a couple of centimetres and do it again — twenty or more passes, working down the screen. One recording each. Your hand does not repeat and averages away; the tablet does repeat and survives. More passes is strictly better.',
+    contact: true
+  },
+  {
+    id: 'cal-v',
+    label: 'Calibrate: vertical',
+    how: 'Same again with the ruler upright, working across the screen instead of down it. Twenty or more slow passes, one recording each.',
+    contact: true
+  },
+  {
+    id: 'check',
+    label: 'Check: diagonal',
+    how: 'A few slow diagonal passes, kept aside to test the correction on strokes it was never built from. Do these after the calibration passes.',
+    contact: true
+  },
   { id: 'free', label: 'Anything else', how: 'Whatever you want to measure.', contact: true }
 ]
 
