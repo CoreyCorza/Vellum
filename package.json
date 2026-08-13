@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit",
     "start": "electron-vite preview",
     "smoke": "npm run -s precheck && electron scripts/smoke-main.cjs",
-    "verify": "npm run -s precheck && electron scripts/verify-main.cjs && electron scripts/verify-curves.cjs && electron scripts/verify-curve-slider.cjs && electron scripts/verify-gestures.cjs && electron scripts/verify-flow-opacity.cjs && electron scripts/verify-edge-quality.cjs && electron scripts/verify-eraser.cjs && electron scripts/verify-presets.cjs && electron scripts/verify-panels.cjs && electron scripts/verify-picker.cjs && electron scripts/verify-diag.cjs && electron scripts/verify-stage.cjs && electron scripts/verify-correction.cjs",
+    "verify": "npm run -s precheck && electron scripts/verify-main.cjs && electron scripts/verify-curves.cjs && electron scripts/verify-curve-slider.cjs && electron scripts/verify-gestures.cjs && electron scripts/verify-flow-opacity.cjs && electron scripts/verify-edge-quality.cjs && electron scripts/verify-eraser.cjs && electron scripts/verify-presets.cjs && electron scripts/verify-panels.cjs && electron scripts/verify-picker.cjs && electron scripts/verify-diag.cjs && electron scripts/verify-stage.cjs && electron scripts/verify-correction.cjs && electron scripts/verify-live-correction.cjs",
     "penprop": "npm run -s precheck && electron scripts/verify-pen-prop.cjs",
     "wintab": "npm run -s precheck && electron scripts/verify-wintab-input.cjs",
     "stabiliser": "npm run -s precheck && electron scripts/measure-stabiliser.cjs",

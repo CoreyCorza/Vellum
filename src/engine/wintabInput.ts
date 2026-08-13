@@ -55,7 +55,8 @@ export function bindWintabInput(
   let intent: Intent = 'ignore'
 
   const toStrokePoint = (s: WintabSample, lx: number, ly: number): StrokePoint => {
-    const doc = editor.camera.screenToDoc(lx, ly)
+    // See input.ts: the correction belongs to pen samples, at the boundary, in both paths.
+    const doc = editor.penToDoc(lx, ly)
     return {
       x: doc.x,
       y: doc.y,

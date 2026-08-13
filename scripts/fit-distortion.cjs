@@ -28,7 +28,10 @@ const path = require('node:path')
 const fs = require('node:fs')
 
 const root = path.join(__dirname, '..')
-const files = process.argv.filter((a) => a.endsWith('.json'))
+// The path after --save is an output, not another capture to read.
+const saveIdx = process.argv.indexOf('--save')
+const saveAt = saveIdx >= 0 ? process.argv[saveIdx + 1] : null
+const files = process.argv.filter((a) => a.endsWith('.json') && a !== saveAt)
 if (files.length === 0) {
   process.stderr.write('usage: electron scripts/fit-distortion.cjs <file.json> [...]\n')
   process.exit(1)
@@ -427,6 +430,10 @@ app.whenReady().then(async () => {
     console.log('    the control. Worth pursuing with more sweeps.')
   } else {
     console.log('    not convincing on held-out passes.')
+  }
+  if (saveAt && out.saved) {
+    fs.writeFileSync(saveAt, JSON.stringify(out.saved), 'utf8')
+    console.log('  saved the correction to ' + saveAt)
   }
   console.log('')
   app.exit(0)

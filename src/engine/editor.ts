@@ -5,6 +5,7 @@ import { Compositor } from './compositor'
 import { History, PixelPatch, ActionCommand } from './history'
 import { StrokeEngine } from './brush/stroke'
 import type { StrokeRecorder } from './diag/capture'
+import { correct, type Correction } from './diag/correction'
 import { NavDrag } from './gestures'
 import { GLStrokeRenderer } from './gl/strokeRenderer'
 import { DEFAULT_BRUSH, type BrushSettings } from './brush/settings'
@@ -247,6 +248,41 @@ export class Editor {
    * needs to know whether the tool was USED while its key was held, which is
    * what separates "hold E to erase a bit" from "tap E to switch to it".
    */
+  /**
+   * The digitiser's own distortion, measured for this tablet, or null.
+   *
+   * Applied to pen samples and to nothing else. This is not smoothing: the corrected position
+   * of a sample is a function of that sample alone, so there is no window, no memory between
+   * samples, and no delay. Real movement passes through untouched — only the part that was
+   * shown to be a fixed property of the glass is removed.
+   *
+   * Measured, and indexed, in a frame fixed to the screen rather than to the document: the
+   * error belongs to the physical surface, so it has to be looked up by where the pen actually
+   * is, not by where the canvas happens to be scrolled to.
+   */
+  distortion: Correction | null = null
+  distortionEnabled = true
+
+  get distortionActive(): boolean {
+    return this.distortionEnabled && this.distortion !== null
+  }
+
+  /**
+   * A pen position in viewport pixels, turned into a document position with the digitiser's
+   * distortion taken out on the way.
+   *
+   * Used by both input paths. Pointer and Wintab samples both arrive as viewport coordinates,
+   * so this is the one place the correction belongs — before anything downstream has had a
+   * chance to treat a distorted coordinate as the truth.
+   */
+  penToDoc(sx: number, sy: number): { x: number; y: number } {
+    if (!this.distortionActive) return this.camera.screenToDoc(sx, sy)
+    const hw = this.camera.vw / 2
+    const hh = this.camera.vh / 2
+    const fixed = correct(this.distortion as Correction, sx - hw, sy - hh)
+    return this.camera.screenToDoc(fixed.x + hw, fixed.y + hh)
+  }
+
   /**
    * Raw pen samples for the last few strokes, kept for measuring the tablet rather than
    * for drawing. See diag/capture.ts.

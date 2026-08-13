@@ -52,7 +52,9 @@ export function bindPointerInput(
 
   const toStrokePoint = (e: PointerEvent): StrokePoint => {
     const p = local(e)
-    const doc = editor.camera.screenToDoc(p.x, p.y)
+    // penToDoc, not screenToDoc: pen samples get the digitiser's measured distortion removed
+    // first. Panning and picking deliberately do not — those follow the cursor, not the pen.
+    const doc = editor.penToDoc(p.x, p.y)
     const tiltX = e.tiltX || 0
     const tiltY = e.tiltY || 0
     let pressure: number

@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { useEditorState } from '../useEditor'
 import { FloatingPanel } from './FloatingPanel'
 import { saveText } from '../platform'
+import { savePrefs } from '../prefs'
+import type { Correction } from '@engine/diag/correction'
 import { report, type Report } from '@engine/diag/analysis'
 import { ProfilerStage } from './ProfilerStage'
 
@@ -61,6 +63,28 @@ export function ProfilerPanel(): JSX.Element {
    * in the way makes the most important recordings impossible to take.
    */
   const [stage, setStage] = useState(false)
+  const [corrNote, setCorrNote] = useState('')
+
+  /**
+   * Load a correction measured from ruler sweeps, and switch it on.
+   *
+   * Read from a file rather than fitted here, because fitting needs a set of sweeps at different
+   * angles and placements that no one is going to redo on every launch. Once loaded it is kept in
+   * preferences and applied to every pen sample.
+   */
+  const loadCorrection = async (file: File): Promise<void> => {
+    try {
+      const parsed = JSON.parse(await file.text()) as Correction
+      editor.distortion = parsed
+      editor.distortionEnabled = true
+      savePrefs({ distortion: parsed, distortionEnabled: true })
+      const bins = (parsed.x?.offsets.length ?? 0) + (parsed.y?.offsets.length ?? 0)
+      setCorrNote(bins + ' bins loaded')
+      editor.ui.emit()
+    } catch {
+      setCorrNote('could not read that file')
+    }
+  }
 
   const recorder = editor.recorder
   const captures = recorder.all()
@@ -128,6 +152,47 @@ export function ProfilerPanel(): JSX.Element {
           </div>
 
           {shown && <Readout r={shown} />}
+
+          {/* Correction — the payoff of everything the profiler measures. Deliberately a
+              toggle rather than a slider: there is nothing to tune, it is either the
+              measured distortion or it is not. */}
+          <div className="prof-head">
+            <span>Distortion correction</span>
+          </div>
+          <label className="chk" htmlFor="corr-on">
+            <input
+              id="corr-on"
+              type="checkbox"
+              checked={editor.distortionActive}
+              disabled={!editor.distortion}
+              onChange={(e) => {
+                editor.distortionEnabled = e.target.checked
+                savePrefs({ distortionEnabled: e.target.checked })
+                editor.ui.emit()
+              }}
+            />
+            {editor.distortion ? 'Correct my tablet' : 'Correct my tablet — nothing loaded'}
+          </label>
+          <p className="prof-how">
+            {editor.distortion
+              ? 'Subtracted from every pen sample. No smoothing and no lag: it only removes what was measured as fixed to the glass.'
+              : 'Load a correction fitted from ruler sweeps to switch this on.'}
+          </p>
+          <div className="prof-actions">
+            <label className="btn">
+              Load correction…
+              <input
+                type="file"
+                accept=".json,application/json"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) void loadCorrection(f)
+                }}
+              />
+            </label>
+            {corrNote && <span className="prof-saved">{corrNote}</span>}
+          </div>
 
           <div className="prof-actions">
             <button className="btn prof-go" onClick={() => setStage(true)}>

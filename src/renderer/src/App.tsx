@@ -266,6 +266,18 @@ export function App(): JSX.Element {
     editor.camera.scale = clamp(editor.camera.scale, 0.02, 64)
   }, [editor])
 
+  /**
+   * Restore the tablet's measured distortion correction.
+   *
+   * Outside the debug block on purpose: this is a real feature rather than a diagnostic, and a
+   * correction that only applied in a debug build would be useless.
+   */
+  useEffect(() => {
+    const p = loadPrefs()
+    if (p.distortion) editor.distortion = p.distortion as never
+    if (typeof p.distortionEnabled === 'boolean') editor.distortionEnabled = p.distortionEnabled
+  }, [editor])
+
   // Debug handle for the console and for scripts/verify.cjs. Dev builds always
   // get it; production only with ?debug, so it isn't sitting in a shipped app.
   useEffect(() => {
