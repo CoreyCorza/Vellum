@@ -329,7 +329,14 @@ export class Selection {
     layer: Surface,
     f: FloatingPixels,
     t: PixelTransform,
-    symmetry: SymmetryMode
+    symmetry: SymmetryMode,
+    /**
+     * How the outline moves, which is not always how the pixels move.
+     *
+     * The pixels are transformed on the canonical half; the outline lives wherever the user drew it.
+     * When that is the mirrored side, the two need transforms that are reflections of each other.
+     */
+    outlineT: PixelTransform = t
   ): void {
     const xf = snappedTransform(t)
 
@@ -340,7 +347,7 @@ export class Selection {
     blitFloat(f.mask, f.from, this.mask, xf)
     blitMirrors(this.mask, this.mask, symmetry)
 
-    this._outline = this._outline.map((q) => applyTransform(q, xf))
+    this._outline = this._outline.map((q) => applyTransform(q, outlineT))
     this.transformBounds(xf, symmetry)
     this._active = !this.bounds.isEmpty
   }
@@ -400,6 +407,49 @@ export function normalisedRect(x: number, y: number, w: number, h: number): Rect
   const x0 = w < 0 ? x + w : x
   const y0 = h < 0 ? y + h : y
   return { x: x0, y: y0, w: Math.abs(w), h: Math.abs(h) }
+}
+
+/**
+ * The same transform as seen from the other side of a mirror.
+ *
+ * Under symmetry the pixels are transformed on the canonical half, so a drag on the mirrored copy is
+ * expressed in canonical coordinates. Anything that has to move WITH the copy the user grabbed — the
+ * outline, the handles — needs that transform conjugated by the mirror, or it travels the opposite
+ * way. Which is exactly what happened: dragging the right smiley rightwards sent its outline left.
+ *
+ * Mirroring about w (matching blitMirrors, which maps x to w - x) turns out to need only a sign flip
+ * on the offset and a reflection of the scale origin.
+ */
+export function mirrorTransform(
+  t: PixelTransform,
+  flipX: boolean,
+  flipY: boolean,
+  w: number,
+  h: number
+): PixelTransform {
+  return {
+    dx: flipX ? -t.dx : t.dx,
+    dy: flipY ? -t.dy : t.dy,
+    sx: t.sx,
+    sy: t.sy,
+    ox: flipX ? w - t.ox : t.ox,
+    oy: flipY ? h - t.oy : t.oy
+  }
+}
+
+/** A point seen from the other side of a mirror. */
+export function mirrorPoint(p: Pt, flipX: boolean, flipY: boolean, w: number, h: number): Pt {
+  return { x: flipX ? w - p.x : p.x, y: flipY ? h - p.y : p.y }
+}
+
+/** A rect seen from the other side of a mirror. */
+export function mirrorRect(r: Rect, flipX: boolean, flipY: boolean, w: number, h: number): Rect {
+  return {
+    x: flipX ? w - (r.x + r.w) : r.x,
+    y: flipY ? h - (r.y + r.h) : r.y,
+    w: r.w,
+    h: r.h
+  }
 }
 
 export function applyTransform(p: Pt, t: PixelTransform): Pt {

@@ -10,6 +10,9 @@ import {
   normalisedRect,
   unionRect,
   applyTransform,
+  mirrorTransform,
+  mirrorPoint,
+  mirrorRect,
   type PixelTransform,
   type SelectionSnapshot,
   type FloatingPixels
@@ -856,7 +859,8 @@ export class Editor {
     const layer = this.doc.active
     if (layer.locked) return
     // The same box the handles are drawn on, so grabbing one works where it looks like it should.
-    const aabb = this.selection.outlineRect
+    const grabbed = this.selection.outlineRect
+    const aabb = grabbed
     const handle = hitTransformHandle(doc, aabb, this.camera.scale)
     if (!handle) {
       /*
@@ -877,12 +881,21 @@ export class Editor {
     const cy = this.doc.height / 2
     const mode = this.brush.symmetry
     this.xfDirty = false
+    const flipX = (mode === 'x' || mode === 'xy') && doc.x > cx
+    const flipY = (mode === 'y' || mode === 'xy') && doc.y > cy
+    /*
+     * The drag is recorded in canonical coordinates, because that is the half the pixels are
+     * transformed on. Both the anchor and the pointer are reflected into it when the grabbed copy is
+     * a mirror, so a scale pivots about the right place — the pivot used to come from the grabbed
+     * copy's box while the scaling happened on the other side of the canvas.
+     */
+    const { width: dw, height: dh } = this.doc
     this.xfDrag = {
       handle,
-      start: { x: doc.x, y: doc.y },
-      aabb,
-      flipX: (mode === 'x' || mode === 'xy') && doc.x > cx,
-      flipY: (mode === 'y' || mode === 'xy') && doc.y > cy
+      start: mirrorPoint({ x: doc.x, y: doc.y }, flipX, flipY, dw, dh),
+      aabb: mirrorRect(grabbed, flipX, flipY, dw, dh),
+      flipX,
+      flipY
     }
     this.invalidate()
   }
@@ -890,7 +903,8 @@ export class Editor {
   extendTransform(doc: Pt): void {
     const xf = this.xfDrag
     if (!xf || !this.xfFloat) return
-    this.xfNow = transformFromDrag(xf, doc)
+    const { width: dw, height: dh } = this.doc
+    this.xfNow = transformFromDrag(xf, mirrorPoint(doc, xf.flipX, xf.flipY, dw, dh))
     if (!isIdentityTransform(this.xfNow)) this.xfDirty = true
     // Redraws the floating pixels only. The layer is not touched, so this costs one small blit
     // rather than a document-sized copy, and nothing has to be undone if the gesture is abandoned.
@@ -929,7 +943,20 @@ export class Editor {
   get liveOutline(): readonly Pt[] {
     const o = this.selection.outline
     if (!this.xfFloat || isIdentityTransform(this.xfNow)) return o
-    return o.map((q) => applyTransform(q, this.xfNow))
+    return o.map((q) => applyTransform(q, this.outlineTransform))
+  }
+
+  /**
+   * How the outline moves, as opposed to how the pixels move.
+   *
+   * The same thing when the grabbed copy is the canonical one, and its mirror image when it is not.
+   * Dragging the mirrored side of a symmetric selection rightwards is a leftward transform on the
+   * canonical half, and applying that to the outline sent it the wrong way.
+   */
+  private get outlineTransform(): PixelTransform {
+    const xf = this.xfDrag
+    if (!xf) return this.xfNow
+    return mirrorTransform(this.xfNow, xf.flipX, xf.flipY, this.doc.width, this.doc.height)
   }
 
   /** Bounds the transform handles are drawn on, following the drag. */
@@ -942,6 +969,7 @@ export class Editor {
     const selBefore = this.xfSelBefore
     if (!xf || !selBefore) return
     const f = this.xfFloat
+    const outlineT = this.outlineTransform
     this.xfDrag = null
     this.xfSelBefore = null
     this.xfFloat = null
@@ -951,7 +979,7 @@ export class Editor {
       return
     }
     // Put the pixels down exactly where the preview showed them, in one edit.
-    this.selection.commit(layer.surface, f, this.xfNow, this.brush.symmetry)
+    this.selection.commit(layer.surface, f, this.xfNow, this.brush.symmetry, outlineT)
     if (!this.xfDirty) {
       // Nothing moved, but the pixels were lifted, so they still have to go back.
       this.contentChanged()
@@ -1568,9 +1596,11 @@ function transformFromDrag(xf: TransformDrag, doc: Pt): PixelTransform {
   const rawDx = doc.x - xf.start.x
   const rawDy = doc.y - xf.start.y
   if (xf.handle === 'move') {
+    // Already canonical: beginTransform reflected both the anchor and the pointer, so there is
+    // nothing left to negate here. Doing both was the bug.
     return {
-      dx: xf.flipX ? -rawDx : rawDx,
-      dy: xf.flipY ? -rawDy : rawDy,
+      dx: rawDx,
+      dy: rawDy,
       sx: 1,
       sy: 1,
       ox: 0,

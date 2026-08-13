@@ -56,6 +56,47 @@ const files = fs
   .map((f) => path.join(dir, f))
 
 const root = path.join(__dirname, '..')
+/**
+ * Parse the JavaScript that verification scripts inject into the page.
+ *
+ * `node --check` sees a template literal as a string and looks inside it no further, so a syntax
+ * error in injected code is invisible until Electron reports "Script failed to execute" with no line
+ * number. That has cost real time more than once — most recently a duplicate `const` that only
+ * parsed while a debugging try/catch happened to be giving it its own scope, so removing the
+ * try/catch broke the suite and the error it had been hiding was a parse error, not a runtime one.
+ *
+ * Compiling the literal with `new Function` finds it in milliseconds and names the identifier.
+ */
+function checkInjectedScripts() {
+  let bad = 0
+  for (const f of files) {
+    // This file contains the patterns it searches for, so it would flag itself.
+    if (path.resolve(f) === path.resolve(__filename)) continue
+    const src = fs.readFileSync(f, 'utf8')
+    // Both shapes used in here: a SCRIPT constant, and String.raw`...` passed inline.
+    const literals = []
+    const named = src.match(/const SCRIPT = `([\s\S]*?)`/)
+    if (named) literals.push(named[1])
+    for (const m of src.matchAll(/String\.raw`([\s\S]*?)`\)/g)) literals.push(m[1])
+    for (const code of literals) {
+      try {
+        // eslint-disable-next-line no-new-func
+        new Function(code)
+      } catch (e) {
+        bad++
+        process.stderr.write(
+          [
+            '',
+            'SYNTAX ERROR inside injected script in ' + path.relative(root, f),
+            '  ' + e.message,
+            ''
+          ].join('\n')
+        )
+      }
+    }
+  }
+  return bad
+}
 
 /**
  * The verification scripts load the built app out of out/, not the sources. Editing a
@@ -116,6 +157,7 @@ for (const f of files) {
 }
 
 bad += checkShaderLiterals()
+bad += checkInjectedScripts()
 bad += checkBuildIsCurrent()
 
 if (bad > 0) {

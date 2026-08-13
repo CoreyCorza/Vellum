@@ -328,6 +328,54 @@ const SCRIPT = `(() => {
   ed.tool = 'brush'
   ed.deselect()
 
+  /* ---- 6e. grabbing the MIRRORED copy ------------------------------------
+   *
+   * Reported from use: draw with symmetry on, select around the RIGHT copy, drag it right. The pixels
+   * went right and the outline went left, so the selection ended up nowhere near its contents and the
+   * next drag threw the drawing away.
+   *
+   * The pixels are transformed on the canonical half, so a rightward drag on the mirrored copy is a
+   * LEFTWARD transform. The outline lives where it was drawn, on the right, and was being moved by
+   * that same leftward transform instead of its mirror image.
+   */
+  reset()
+  ed.setBrush({ symmetry: 'x', size: 20, color: '#ff0000' })
+  stroke(line(560, 400, 640, 400, 30))
+  const mirrorX = W - 600
+  R.mirrorGrab = { paintedBoth: ink(600, 400) && ink(mirrorX, 400) }
+
+  ed.tool = 'transform'
+  // A selection around the MIRRORED copy, which is the one the user grabbed.
+  ed.selectRect(mirrorX - 80, 360, 160, 80)
+  const antsBefore = ed.selection.outlineRect
+  R.mirrorGrab.antsStartOnRight = antsBefore.x > cx
+
+  ed.beginTransform({ x: mirrorX, y: 400 })
+  // Drag it 120 px to the RIGHT.
+  ed.extendTransform({ x: mirrorX + 120, y: 400 })
+  const antsDuring = ed.liveHandleRect
+  R.mirrorGrab.antsFollowTheDrag = antsDuring.x > antsBefore.x + 60
+  ed.endTransform()
+
+  const antsAfter = ed.selection.outlineRect
+  R.mirrorGrab.antsCommittedRight = antsAfter.x > antsBefore.x + 60
+  // The pixels went right too, and the canonical copy mirrored it by going left.
+  R.mirrorGrab.pixelsWentRight = ink(mirrorX + 120, 400) && !ink(mirrorX, 400)
+  R.mirrorGrab.canonicalMirrored = ink(600 - 120, 400) && !ink(600, 400)
+  // And the outline still surrounds its own contents, so a second drag grabs the right thing.
+  R.mirrorGrab.outlineHoldsContents =
+    ed.selection.contains(mirrorX + 120, 400) && ed.selection.active
+
+  // A second drag must not destroy anything.
+  ed.beginTransform({ x: mirrorX + 120, y: 400 })
+  ed.extendTransform({ x: mirrorX + 200, y: 400 })
+  ed.endTransform()
+  R.mirrorGrab.secondDragKeepsInk = ink(mirrorX + 200, 400)
+
+  ed.setBrush({ symmetry: 'none' })
+  ed.tool = 'brush'
+  ed.deselect()
+
   // ---- 7. deselect / select-all -------------------------------------------
   reset()
   ed.selectRect(10, 10, 40, 40)
@@ -359,7 +407,11 @@ const SCRIPT = `(() => {
     R.antsFollow.duringDrag && R.antsFollow.afterCommit &&
     R.strayClickKeepsSelection &&
     R.symHandles.unionIsWide && R.symHandles.handlesOnShape &&
-    R.symHandles.handlesFollow && R.symHandles.stillActive
+    R.symHandles.handlesFollow && R.symHandles.stillActive &&
+    R.mirrorGrab.paintedBoth && R.mirrorGrab.antsStartOnRight &&
+    R.mirrorGrab.antsFollowTheDrag && R.mirrorGrab.antsCommittedRight &&
+    R.mirrorGrab.pixelsWentRight && R.mirrorGrab.canonicalMirrored &&
+    R.mirrorGrab.outlineHoldsContents && R.mirrorGrab.secondDragKeepsInk
   )
   return R
 })()`
