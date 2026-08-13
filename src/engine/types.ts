@@ -53,7 +53,25 @@ export function blendToComposite(b: BlendMode): GlobalCompositeOperation {
   return b === 'normal' ? 'source-over' : (b as GlobalCompositeOperation)
 }
 
-export type ToolId = 'brush' | 'eraser' | 'picker'
+export type ToolId =
+  | 'brush'
+  | 'eraser'
+  | 'picker'
+  | 'select-rect'
+  | 'select-ellipse'
+  | 'select-lasso'
+  | 'transform'
+
+export const SELECT_TOOLS: readonly ToolId[] = ['select-rect', 'select-ellipse', 'select-lasso']
+
+export function isSelectTool(t: ToolId): boolean {
+  return t === 'select-rect' || t === 'select-ellipse' || t === 'select-lasso'
+}
+
+export function isPaintTool(t: ToolId): boolean {
+  return t === 'brush' || t === 'eraser'
+}
+
 
 /**
  * How the pointer is drawn over the canvas. An app-wide preference rather than
